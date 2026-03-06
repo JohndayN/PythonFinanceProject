@@ -1,0 +1,27 @@
+stock_data:
+{
+  ticker: "VCB",
+  date: ISODate,
+  close: Number,
+  volume: Number
+}
+
+financial_data:
+{
+  ticker: "VCB",
+  quarter: "2024Q1",
+  revenue: Number,
+  net_profit: Number,
+  total_assets: Number,
+  total_debt: Number
+}
+
+fraud_scores:
+{
+  ticker: "VCB",
+  date: ISODate,
+  numeric_score: Number,
+  text_score: Number,
+  final_score: Number,
+  risk_level: "LOW/MEDIUM/HIGH"
+}
