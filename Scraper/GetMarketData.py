@@ -5,6 +5,10 @@ import numpy as np
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 import time
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 
 def get_all_symbols() -> List[str]:
     try:
@@ -15,104 +19,78 @@ def get_all_symbols() -> List[str]:
         print(f"Error fetching all symbols: {str(e)}")
         return []
 
-def get_market_data(ticker: str, 
-                    start_date: Optional[str] = None, 
-                    end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+def get_market_data(ticker, start_date=None, end_date=None):
+
+    ticker = ticker.upper().strip()
+
+    if start_date is None:
+        start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+
+    # ---- Try VNSTOCK first ----
     try:
-        if start_date is None:
-            start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-        if end_date is None:
-            end_date = datetime.now().strftime("%Y-%m-%d")
-        
-        # Normalize ticker
-        ticker = ticker.upper().strip()
-        
-        # Try Vietnamese stock first (VNX)
-        vietnam_stocks = ['VCB', 'VIC', 'VNM', 'HPG', 'FPT', 'MWG', 'TCB', 'BID', 'GAS', 'MSN', 'IMP']
-        if ticker in vietnam_stocks:
-            try:
-                stock = Vnstock().stock(symbol=ticker, source="VCI")
-                df = stock.quote.history(start=start_date, end=end_date, interval="1D")
-                
-                if df is not None and not df.empty:
-                    # Standardize column names (case-insensitive)
-                    df.columns = [col.lower() for col in df.columns]
-                    
-                    # Ensure we have close price
-                    if 'close' not in df.columns:
-                        for col in df.columns:
-                            if 'close' in col.lower():
-                                df['close'] = df[col]
-                                break
-                    
-                    # Ensure we have volume
-                    if 'volume' not in df.columns:
-                        for col in df.columns:
-                            if 'volume' in col.lower():
-                                df['volume'] = df[col]
-                                break
-                    
-                    # Reset index to make date proper DatetimeIndex
-                    if not isinstance(df.index, pd.DatetimeIndex):
-                        df.index = pd.to_datetime(df.index)
-                    
-                    # Create result DataFrame with only needed columns
-                    result_df = pd.DataFrame()
-                    result_df.index = df.index
-                    
-                    if 'close' in df.columns:
-                        result_df['Close'] = pd.to_numeric(df['close'], errors='coerce')
-                    else:
-                        result_df['Close'] = pd.to_numeric(df.iloc[:, 0], errors='coerce')
-                    
-                    if 'volume' in df.columns:
-                        result_df['Volume'] = pd.to_numeric(df['volume'], errors='coerce')
-                    else:
-                        result_df['Volume'] = 0
-                    
-                    # Add symbol
-                    result_df['symbol'] = ticker
-                    
-                    # Calculate returns
-                    result_df['return'] = result_df['Close'].pct_change()
-                    result_df['log_return'] = np.log(result_df['Close'] / result_df['Close'].shift(1))
-                    
-                    # Remove NaN rows
-                    result_df = result_df.dropna()
-                    
-                    if not result_df.empty:
-                        return result_df
-            except Exception as e:
-                print(f"Skipping {ticker} — {str(e)}")
-        
-        # Fallback to yfinance for international stocks or if VNX failed
-        try:
-            df = yf.download(ticker, start=start_date, end=end_date, progress=False)
-            
-            if df is not None and not df.empty:
-                if isinstance(df, pd.DataFrame):
-                    result = pd.DataFrame()
-                    result.index = df.index
-                    result['Close'] = df['Close']
-                    result['Volume'] = df['Volume']
-                    result['symbol'] = ticker
-                    
-                    # Calculate returns
-                    result['return'] = result['Close'].pct_change()
-                    result['log_return'] = np.log(result['Close'] / result['Close'].shift(1))
-                    
-                    result = result.dropna()
-                    return result if not result.empty else None
-                else:
-                    return None
-        except Exception as e:
-            print(f"Skipping {ticker} — {str(e)}")
-        
-        return None
+        stock = Vnstock().stock(symbol=ticker, source="VCI")
+        df = stock.quote.history(start=start_date, end=end_date, interval="1D")
+
+        if df is not None and not df.empty:
+
+            df.columns = [c.lower() for c in df.columns]
+
+            result = pd.DataFrame()
+            result.index = pd.to_datetime(df.index)
+
+            result["Close"] = pd.to_numeric(df["close"], errors="coerce")
+            result["Volume"] = pd.to_numeric(df.get("volume", 0), errors="coerce")
+
+            result["symbol"] = ticker
+
+            result["return"] = result["Close"].pct_change(fill_method=None)
+            result["log_return"] = np.log(result["Close"] / result["Close"].shift(1))
+
+            result = result.dropna(subset=["return"])
+
+            return result
+
+        if df is None or df.empty:
+            print(f"No data returned for {ticker} with Vnstock")
+            return None
         
     except Exception as e:
-        print(f"Skipping {ticker} — {str(e)}")
-        return None
+        print(f"Vnstock failed {ticker}: {e}")
+
+    # ---- Yahoo fallback ----
+    try:
+
+        yf_ticker = ticker + ".VN"
+
+        df = yf.download(yf_ticker, start=start_date, end=end_date, progress=False)
+
+        if df is not None and not df.empty:
+
+            result = pd.DataFrame()
+            result.index = df.index
+
+            result["Close"] = df["Close"]
+            result["Volume"] = df["Volume"]
+            result["symbol"] = ticker
+
+            result["return"] = result["Close"].pct_change()
+            result["log_return"] = np.log(result["Close"] / result["Close"].shift(1))
+
+            result = result.dropna(subset=["return"])
+
+            return result
+        
+        if df is None or df.empty:
+            print(f"No data returned for {ticker} with YahooFinance")
+            return None
+
+    except Exception as e:
+        print(f"Yahoo failed {ticker}: {e}")
+
+    return None
 
 def get_bulk_market_data(tickers: List[str], 
                         start_date: Optional[str] = None, 
@@ -178,6 +156,17 @@ def get_market_correlation_matrix(tickers: List[str],
     correlation = returns_df.corr()
     
     return correlation
+
+#Not used yet, but could be useful for future analysis
+def build_returns_matrix(data):
+
+    pivot = data.pivot_table(
+        index=data.index,
+        columns="symbol",
+        values="return"
+    )
+
+    return pivot
 
 # Legacy function name for compatibility
 def fetch_market_data(*args, **kwargs):
