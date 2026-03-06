@@ -3,8 +3,8 @@ import pandas as pd
 import config
 
 # --- Data ---
-from Scraper.GetMarketData import get_market_data #There are but not done
-from Scraper.HOSE.GetHOSENews import get_company_news #There are but not done
+from Scraper.GetMarketData import get_market_data
+from Scraper.HOSE.GetHOSENews import get_company_news
 
 # --- Feature Engineering ---
 from FeatureEngineering.feature_engineering import create_market_features
@@ -25,7 +25,7 @@ from PortfolioOptimizer.Optimizer import optimize_portfolio_mean_variance_fraud
 from Database.MongoClient import save_results
 
 # --- HOSE ---
-from Scraper.HOSE.GetHOSEMarketData import get_hose_market_data
+from Scraper.HOSE.Liveboard.GetHOSEMarketDataAuction import get_hose_market_liveboard
 from FeatureEngineering.hose_market_features import create_hose_market_features
 from AnomalyDetection.HoseMarketIsolationForest import compute_hose_market_anomaly
 
@@ -94,9 +94,9 @@ for ticker in TICKERS:
     text_risk_scores[ticker] = text_score
     
 #HOSE Market Anomaly Scores
-print("Fetching hose market data...")
+print("Fetching hose market liveboard...")
 
-hose_market_df = get_hose_market_data()
+hose_market_df = get_hose_market_liveboard()
 hose_market_features = create_hose_market_features(hose_market_df)
 hose_market_anomaly = compute_hose_market_anomaly(hose_market_features)
 

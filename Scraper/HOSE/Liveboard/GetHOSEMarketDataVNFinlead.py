@@ -2,12 +2,48 @@ import requests
 import pandas as pd
 import numpy as np
 
-def get_hose_market_data():
-	"""
-	Fetch HOSE market data and filter to essential columns
-	Includes real-time price percentage changes
-	"""
-	url = "https://api.hsx.vn/l/api/v1/securities/load-securities-matching/1"
+"""
+            "securitySymbol": "ACB",
+            "securityName": null,
+            "priorClosePrice": "23550",
+            "ceiling": "25150",
+            "floor": "21950",
+            "best3Bid": "23200",
+            "best3BidVolume": "360800",
+            "best2Bid": "23250",
+            "best2BidVolume": "182100",
+            "best1Bid": "23300",
+            "best1BidVolume": "89400",
+            "accumulatedPrice": "23300",
+            "accumulatedVol": "200000",
+            "changePrice": "-250",
+            "changePriceRatio": "-1.061571",
+            "best1Offer": "23350",
+            "best1OfferVolume": "54500",
+            "best2Offer": "23400",
+            "best2OfferVolume": "202400",
+            "best3Offer": "23450",
+            "best3OfferVolume": "31200",
+            "openPrice": "23500",
+            "highest": "23600",
+            "lowest": "23200",
+            "totalShare": "11699100",
+            "totalValue": "273531125000",
+            "foreignRoomBuy": "914800",
+            "foreignRoomSell": "1457300",
+            "currentRoom": "147946735",
+            "totalRoom": "1540996979",
+            "iNav": "",
+            "iIndex": "",
+            "warning_status": "",
+            "id": 2784,
+            "name": "Ngân hàng Thương mại Cổ phần Á Châu",
+            "code": "ACB"
+        """
+
+
+def get_hose_market_liveboard(board_id = 3):
+	url = "https://api.hsx.vn/l/api/v1/securities/load-securities-hoseindex-forboard/3"
 
 	headers = {
 		"accept": "application/json, text/plain, */*",

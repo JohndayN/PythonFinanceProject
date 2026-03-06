@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 # --- Data Modules ---
 from Scraper.GetMarketData import get_market_data
-from Scraper.HOSE.GetHOSEMarketData import get_hose_market_data
+from Scraper.HOSE.Liveboard.GetHOSEMarketDataAuction import get_hose_market_data_auction
 
 # --- Feature Engineering ---
 from FeatureEngineering.feature_engineering import create_market_features
@@ -181,7 +181,7 @@ async def fetch_hose_market():
     Fetch HOSE market data
     """
     try:
-        df = get_hose_market_data()
+        df = get_hose_market_data_auction()
         if df is None or df.empty:
             print("Warning: No HOSE data returned. Attempting to fetch...")
             # Try again or return cached data
@@ -324,13 +324,10 @@ async def detect_anomalies(request: MarketDataRequest):
 
 @app.get("/api/anomaly/hose-market")
 async def detect_hose_anomalies():
-    """
-    Detect anomalies in HOSE market data
-    """
     try:
-        df = get_hose_market_data()
+        df = get_hose_market_data_auction()
         if df is None or df.empty:
-            raise HTTPException(status_code=404, detail="No HOSE data available")
+            raise HTTPException(status_code=404, detail="No HOSE auction data available")
         
         features = create_hose_market_features(df)
         anomalies_df = compute_hose_market_anomaly(features)

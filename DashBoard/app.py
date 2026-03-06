@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 
 # Import your modules
-from Scraper.HOSE.GetHOSEMarketData import get_hose_market_data
+from Scraper.HOSE.Liveboard.GetHOSEMarketDataAuction import get_hose_market_data_auction
 from FeatureEngineering.hose_market_features import create_hose_market_features
 from AnomalyDetection.HoseMarketIsolationForest import compute_hose_market_anomaly
 
@@ -19,7 +19,7 @@ selected_ticker = st.sidebar.text_input("Ticker", "VCB")
 
 if st.sidebar.button("Refresh Data"):
 
-    Hose_market_df = get_hose_market_data()
+    Hose_market_df = get_hose_market_data_auction()
     features = create_hose_market_features(Hose_market_df)
     anomaly_df = compute_hose_market_anomaly(features)
 
