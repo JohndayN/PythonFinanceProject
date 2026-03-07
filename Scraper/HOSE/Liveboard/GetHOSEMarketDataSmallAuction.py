@@ -1,37 +1,34 @@
-import requests
-import pandas as pd
-import numpy as np
-
 """
+"data": [
         {
             "securitySymbol": "AAA",
             "securityName": null,
             "priorClosePrice": "7580",
             "ceiling": "8110",
             "floor": "7050",
-            "best3Bid": "7420",
-            "best3BidVolume": "119000",
-            "best2Bid": "7430",
-            "best2BidVolume": "3600",
-            "best1Bid": "7440",
-            "best1BidVolume": "11100",
-            "accumulatedPrice": "7440",
-            "accumulatedVol": "100",
-            "changePrice": "-140",
-            "changePriceRatio": "-1.846966",
-            "best1Offer": "7470",
-            "best1OfferVolume": "200",
-            "best2Offer": "7490",
-            "best2OfferVolume": "6700",
-            "best3Offer": "7500",
-            "best3OfferVolume": "23600",
-            "openPrice": "7550",
-            "highest": "7550",
-            "lowest": "7440",
-            "totalShare": "1192800",
-            "totalValue": "8936250000",
-            "foreignRoomBuy": "22200",
-            "foreignRoomSell": "800",
+            "best3Bid": "7480",
+            "best3BidVolume": "334",
+            "best2Bid": "7490",
+            "best2BidVolume": "113",
+            "best1Bid": "7500",
+            "best1BidVolume": "437",
+            "accumulatedPrice": "7500",
+            "accumulatedVol": "1",
+            "changePrice": "-80",
+            "changePriceRatio": "-1.055409",
+            "best1Offer": "7600",
+            "best1OfferVolume": "1",
+            "best2Offer": "7700",
+            "best2OfferVolume": "1",
+            "best3Offer": "7710",
+            "best3OfferVolume": "61",
+            "openPrice": "7600",
+            "highest": "7990",
+            "lowest": "7500",
+            "totalShare": "1136",
+            "totalValue": "8575610",
+            "foreignRoomBuy": "",
+            "foreignRoomSell": "",
             "currentRoom": "387375723",
             "totalRoom": "393742730",
             "iNav": "",
@@ -40,11 +37,15 @@ import numpy as np
             "id": 2896,
             "name": "Công ty Cổ phần Nhựa An Phát Xanh",
             "code": "AAA"
-        },x
+        },
 """
 
-def get_hose_market_liveboard(board_id = 1):
-	url = "https://api.hsx.vn/l/api/v1/securities/load-securities-matching/1"
+import requests
+import pandas as pd
+import numpy as np
+
+def get_hose_market_liveboard(board_id = 6):
+	url = "https://api.hsx.vn/l/api/v1/securities/load-securities-matching/6"
 
 	headers = {
 		"accept": "application/json, text/plain, */*",
@@ -63,15 +64,15 @@ def get_hose_market_liveboard(board_id = 1):
 
 		df = pd.DataFrame(data)
 		df = df.rename(columns={
-    		"securitySymbol": "symbol",
-    		"name": "company",
-			"accumulatedPrice": "price",
+            "securitySymbol": "symbol",
+            "name": "company",
+            "accumulatedPrice": "price",
 			"changePrice": "change",
 			"changePriceRatio": "pct_change",
 			"accumulatedVol": "volume",
 			"openPrice": "open",
 			"highest": "high",
-			"lowest": "low"
+			"lowest": "low",
 			})
 		
 		df = df[["symbol","company","price","change","pct_change","volume","open","high","low"]]
