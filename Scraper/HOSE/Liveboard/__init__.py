@@ -27,7 +27,7 @@ BOARDS = {
     }
 }
 
-def get_market_data(board):
+def get_market_data(board="Auction"):
 
     # If user enters board name
     if isinstance(board, str):

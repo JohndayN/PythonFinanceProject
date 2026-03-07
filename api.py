@@ -1,4 +1,3 @@
-from aiohttp import request
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
@@ -10,10 +9,11 @@ import config
 import asyncio
 import io
 from datetime import datetime, timedelta
+from fastapi.responses import JSONResponse
 
 # --- Data Modules ---
 from Scraper.GetMarketData import get_market_data
-from Scraper.HOSE.Liveboard.GetHOSEMarketDataAuction import get_hose_market_data_auction
+from Scraper.HOSE.Liveboard import get_market_data as get_hose_market_data
 
 # --- Feature Engineering ---
 from FeatureEngineering.feature_engineering import create_market_features
@@ -46,6 +46,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
+#Handle error
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.detail,
+            "status_code": exc.status_code,
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -56,7 +68,8 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8000",
-        "*"  # Allow all origins as fallback
+        "http://localhost:3003",
+        "http://localhost:3002"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -176,12 +189,9 @@ async def fetch_market_data(request: MarketDataRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/scraper/hose-market")
-async def fetch_hose_market():
-    """
-    Fetch HOSE market data
-    """
+async def fetch_hose_market(board: str = "Auction"):
     try:
-        df = get_hose_market_data_auction()
+        df = await run_in_threadpool(get_hose_market_data, board)
         if df is None or df.empty:
             print("Warning: No HOSE data returned. Attempting to fetch...")
             # Try again or return cached data
@@ -193,6 +203,7 @@ async def fetch_hose_market():
             }
         
         return {
+            "board": board,
             "data": df.to_dict('records'),
             "count": len(df),
             "status": "success"
@@ -285,7 +296,7 @@ async def detect_anomalies(request: MarketDataRequest):
         except Exception as e:
             # If feature creation fails, use simplified approach
             features = pd.DataFrame({
-                'return': df['close'].pct_change() if 'close' in df.columns else [0] * len(df)
+                'return': df['Close'].pct_change() if 'Close' in df.columns else [0] * len(df)
             }).fillna(0)
         
         if features is None or features.empty or len(features) < 10:
@@ -325,7 +336,7 @@ async def detect_anomalies(request: MarketDataRequest):
 @app.get("/api/anomaly/hose-market")
 async def detect_hose_anomalies():
     try:
-        df = get_hose_market_data_auction()
+        df = await run_in_threadpool(get_hose_market_data)
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail="No HOSE auction data available")
         
@@ -350,8 +361,8 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
     """
     try:
         # Validate input
-        if not request.tickers or len(request.tickers) < 2:
-            raise HTTPException(status_code=400, detail="At least 2 tickers required for optimization")
+        if not request.tickers or len(request.tickers) < 1:
+            raise HTTPException(status_code=400,detail="At least 1 ticker required")
         
         # Fetch data for all tickers
         market_data = {}
@@ -443,8 +454,8 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
                 print(f"Error processing ticker {ticker}: {str(e)}")
                 continue
         
-        if len(valid_tickers) < 2:
-            raise HTTPException(status_code=400, detail=f"Insufficient valid tickers. Got data for: {valid_tickers}. Need at least 2.")
+        if len(valid_tickers) < 1:
+            raise HTTPException(status_code=400, detail=f"No valid tickers found")
         
         # Align returns to same length for covariance calculation
         min_len = min(len(r) for r in returns_data.values())
@@ -463,10 +474,10 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
             expected_returns = np.nan_to_num(expected_returns, nan=0.001)  # Default 0.1% if NaN
             
             # Ensure sufficient data for covariance
-            if returns_array.shape[1] > 1:
-                cov_matrix = np.cov(returns_array)
+            if len(valid_tickers) == 1:
+                cov_matrix = np.array([[np.var(returns_array[0])]])
             else:
-                cov_matrix = np.eye(len(valid_tickers)) * 0.01
+                cov_matrix = np.cov(returns_array)
             
             # Handle 1D cov_matrix (single asset case, though we require 2+)
             if cov_matrix.ndim == 1:
@@ -865,16 +876,6 @@ async def shutdown_event():
     """
     db_manager.disconnect()
     print("Database connection closed")
-
-# ===================== ERROR HANDLERS =====================
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return {
-        "error": exc.detail,
-        "status_code": exc.status_code,
-        "timestamp": datetime.now().isoformat()
-    }
 
 if __name__ == "__main__":
     import uvicorn

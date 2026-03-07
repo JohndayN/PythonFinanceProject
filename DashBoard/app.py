@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 
 # Import your modules
-from Scraper.HOSE.Liveboard.GetHOSEMarketDataAuction import get_hose_market_data_auction
+from Scraper.HOSE.Liveboard import get_market_data
 from FeatureEngineering.hose_market_features import create_hose_market_features
 from AnomalyDetection.HoseMarketIsolationForest import compute_hose_market_anomaly
 
@@ -15,11 +15,22 @@ st.title("Vietnam Stock Fraud & Anomaly Dashboard")
 # Load Hose Market data
 st.sidebar.header("Settings")
 
-selected_ticker = st.sidebar.text_input("Ticker", "VCB")
+selected_ticker = st.sidebar.text_input("Ticker", "VCB").upper()
+
+board = st.sidebar.selectbox(
+    "Select Board",
+    ["Auction", "Small Auction", "VNDiamond", "VNFinLead", "CW", "ETF"]
+)
+
+@st.cache_data(ttl=30)
+def load_market(board):
+    return get_market_data(board)
 
 if st.sidebar.button("Refresh Data"):
 
-    Hose_market_df = get_hose_market_data_auction()
+    Hose_market_df = load_market(board)
+    if Hose_market_df.empty:
+        st.error("No data returned from HOSE API")
     features = create_hose_market_features(Hose_market_df)
     anomaly_df = compute_hose_market_anomaly(features)
 
@@ -29,7 +40,7 @@ if st.sidebar.button("Refresh Data"):
         right_on="securitySymbol"
     )
 
-    stock_data = merged[merged["securitySymbol"] == selected_ticker]
+    stock_data = merged[merged["securitySymbol"].str.upper() == selected_ticker]
 
     if stock_data.empty:
         st.error("Ticker not found")

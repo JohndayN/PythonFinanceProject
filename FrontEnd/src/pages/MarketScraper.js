@@ -14,6 +14,7 @@ const MarketScraper = () => {
 	const [error, setError] = useState(null);
 	const [availableTickers, setAvailableTickers] = useState([]);
 	const [hoseData, setHoseData] = useState(null);
+	const [board, setBoard] = useState("Auction");
 	const [newsData, setNewsData] = useState(null);
 	const [activeTab, setActiveTab] = useState('single');
 	const [currentPage, setCurrentPage] = useState(1);
@@ -221,7 +222,7 @@ const MarketScraper = () => {
 		}
 	};
 
-	const fetchHOSEData = async () => {
+	const fetchHOSEData = async (selectedBoard = board) => {
 		setLoading(true);
 		setError(null);
 		setHoseData(null);
@@ -240,13 +241,7 @@ const MarketScraper = () => {
 				return;
 			}
 
-			const response = await fetch('http://localhost:8000/api/scraper/hose-market', {
-				method: 'GET',
-				headers: { 
-					'Accept': 'application/json',
-					'Content-Type': 'application/json'
-				}
-			});
+			const response = await fetch(`http://localhost:8000/api/scraper/hose-market?board=${encodeURIComponent(selectedBoard)}`);
 
 			if (!response.ok) {
 				let errorMessage = '';
@@ -548,6 +543,26 @@ const MarketScraper = () => {
 					<div className="form-card">
 						<h2>HOSE Market Overview</h2>
 						<p>View current HOSE market data for all listed stocks</p>
+						<div className="form-group">
+						<label htmlFor="hoseBoard">Select Board</label>
+						<select
+							id="hoseBoard"
+							value={board}
+							onChange={(e) => {
+								const newBoard = e.target.value;
+								setBoard(newBoard);
+								fetchHOSEData(newBoard);
+								}}
+							className="form-input"
+						>
+							<option value="Auction">Auction</option>
+							<option value="Small Auction">Small Auction</option>
+							<option value="VNDiamond">VNDiamond</option>
+							<option value="VNFinLead">VNFinLead</option>
+							<option value="CW">CW</option>
+							<option value="ETF">ETF</option>
+						</select>
+						</div>
 						<button onClick={fetchHOSEData} disabled={loading} className="submit-button">
 							{loading ? 'Fetching...' : 'Load HOSE Market Data'}
 						</button>
@@ -563,7 +578,7 @@ const MarketScraper = () => {
 					{hoseData && (
 						<div className="results-card">
 							<div className="results-header">
-								<h2>HOSE Market Data</h2>
+								<h2>HOSE Market Data - {board}</h2>
 								<span className="data-count">
 									Showing {getPaginatedData().data.length} of {hoseData.data?.length || 0} stocks
 								</span>
@@ -658,6 +673,7 @@ const MarketScraper = () => {
 						>
 							{loading ? "Fetching..." : "Load Company News"}
 						</button>
+					</div>
 
 					{error && (
 						<div className="error-card">
@@ -775,8 +791,5 @@ const MarketScraper = () => {
 			)}
 		</div>
 	)}		
-	</div>
-);
-};
 
 export default MarketScraper;
