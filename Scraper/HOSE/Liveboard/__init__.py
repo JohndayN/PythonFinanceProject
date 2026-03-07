@@ -27,15 +27,30 @@ BOARDS = {
     }
 }
 
-def get_market_data(board_id: int):
-    board = BOARDS.get(board_id)
+def get_market_data(board):
 
-    if board is None:
+    # If user enters board name
+    if isinstance(board, str):
+        board = board.strip().lower()
+
+        for board_id, info in BOARDS.items():
+            if info["name"].lower() == board:
+                return fetch_board(info["url"])
+
         raise ValueError(
-            f"Invalid board_id {board_id}. Available boards: {list_boards()}"
+            f"Invalid board name '{board}'. Available boards: {list_boards()}"
         )
 
-    return fetch_board(board["url"])
+    # If user enters board id
+    if isinstance(board, int):
+        info = BOARDS.get(board)
+
+        if info is None:
+            raise ValueError(
+                f"Invalid board_id {board}. Available boards: {list_boards()}"
+            )
+
+        return fetch_board(info["url"])
 
 def list_boards():
     return {k: v["name"] for k, v in BOARDS.items()}
