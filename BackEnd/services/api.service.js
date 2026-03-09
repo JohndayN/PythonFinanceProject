@@ -9,11 +9,12 @@ const PYTHON_API = process.env.PYTHON_API_URL || "http://localhost:8000";
 // Create axios instance with default config
 const apiClient = axios.create({
     baseURL: PYTHON_API,
-    timeout: 30000,
+    timeout: 120000,
+    httpAgent: new http.Agent({ keepAlive: True, maxSockets: 50}),
+    httpsAgent: new https.Agent({ keepAlive: True, maxSockets: 50}), //Not used yet
     headers: {
         "Content-Type": "application/json"
     },
-    validateStatus: (status) => status < 500
 });
 
 /**

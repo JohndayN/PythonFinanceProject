@@ -158,18 +158,21 @@ async def fetch_market_data(request: MarketDataRequest):
         
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data found for {request.ticker} between {start_date} and {end_date}. Try a different date range or stock.")
-        
-        # Convert index to dates
-        dates = []
-        if hasattr(df.index, 'strftime'):
-            dates = df.index.strftime('%Y-%m-%d').tolist()
-        elif hasattr(df.index, 'date'):
-            dates = [d.strftime('%Y-%m-%d') for d in df.index]
+
+        # Detect date column automatically
+        date_col = None
+        for col in ["time", "date", "datetime"]:
+            if col in df.columns:
+                date_col = col
+                break
+
+        if date_col:
+            dates = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d').tolist()
         else:
-            dates = [str(d)[:10] for d in df.index.tolist()]
+            dates = df.index.astype(str).tolist()
         
-        close_prices = df['Close'].tolist() if 'Close' in df.columns else []
-        volumes = df['Volume'].tolist() if 'Volume' in df.columns else []
+        close_prices = df['Close'].tolist() if 'close' in df.columns else []
+        volumes = df['Volume'].tolist() if 'volume' in df.columns else []
         
         return MarketDataResponse(
             ticker=request.ticker,

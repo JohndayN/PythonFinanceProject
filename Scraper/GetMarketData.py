@@ -6,9 +6,15 @@ from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 import time
 import sys
+import config
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
+def normalize_date(date_str):
+    try:
+        return datetime.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
+    except:
+        return date_str
 
 def get_all_symbols() -> List[str]:
     try:
@@ -22,40 +28,30 @@ def get_all_symbols() -> List[str]:
 def get_market_data(ticker, start_date=None, end_date=None):
 
     ticker = ticker.upper().strip()
-
+    
     if start_date is None:
-        start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        start_date = config.start_date
 
     if end_date is None:
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = config.end_date
+
+    start_date = normalize_date(start_date)
+    end_date = normalize_date(end_date)
 
     # ---- Try VNSTOCK first ----
     try:
-        stock = Vnstock().stock(symbol=ticker, source="VCI")
-        df = stock.quote.history(start=start_date, end=end_date, interval="1D")
-
-        if df is not None and not df.empty:
-
-            df.columns = [c.lower() for c in df.columns]
-
-            result = pd.DataFrame()
-            result.index = pd.to_datetime(df.index)
-
-            result["Close"] = pd.to_numeric(df["close"], errors="coerce")
-            result["Volume"] = pd.to_numeric(df.get("volume", 0), errors="coerce")
-
-            result["symbol"] = ticker
-
-            result["return"] = result["Close"].pct_change(fill_method=None)
-            result["log_return"] = np.log(result["Close"] / result["Close"].shift(1))
-
-            result = result.dropna(subset=["return"])
-
-            return result
+        stock = Vnstock().stock(symbol=ticker)
+        df = stock.quote.history(start=start_date, end=end_date, interval="1d")
 
         if df is None or df.empty:
             print(f"No data returned for {ticker} with Vnstock")
             return None
+        
+        df["symbol"] = ticker
+        df["return"] = df["close"].pct_change()
+        df["log_return"] = np.log(df["close"] / df["close"].shift(1))
+        
+        return df
         
     except Exception as e:
         print(f"Vnstock failed {ticker}: {e}")

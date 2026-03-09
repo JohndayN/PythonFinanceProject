@@ -71,6 +71,7 @@ package-lock.json
 *.sqlite3
 .mongodb/
 **/db.js
+ProjectNote.txt
 
 # Logs
 logs/

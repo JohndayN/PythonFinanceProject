@@ -52,9 +52,35 @@ def build_vn_market(start, end):
         return pd.concat(all_data, ignore_index=True)
     return None
 
-start_date = "2020-01-01"
-end_date = datetime.today().strftime("%Y-%m-%d")
+end_date = datetime.today()
+start_date = (end_date - timedelta(days = 365*2)).strftime("%Y-%m-%d")
+end_date = end_date.strftime("%Y-%m-%d")
+
 market_df = build_vn_market(start_date, end_date)
 
-if market_df is not None:
-    market_df.to_csv("vn_full_market.csv", index=False)
+market_df["time"] = pd.to_datetime(market_df["time"])
+grouped = market_df.groupby("symbol")
+docs = []
+for symbol, g in grouped:
+    prices = g.sort_values("time").apply(
+        lambda r: {
+            "date": r["time"],
+            "open": r["open"],
+            "high": r["high"],
+            "low": r["low"],
+            "close": r["close"],
+            "volume": r["volume"],
+            "return": r["return"],
+            "log_return": r["log_return"]
+        }, axis = 1
+    ).tolist()
+    
+    docs.append({
+        "symbol": symbol,
+        "prices": prices
+    })
+#if market_df is not None:
+#    market_df.to_csv("vn_full_market.csv", index=False)s
+print("Documents created:", len(docs))
+df = pd.DataFrame(docs)
+df.to_csv("seperated_vn_market_output.csv", sep=',', encoding='utf-8', index=False)

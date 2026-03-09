@@ -48,7 +48,7 @@ def start_python_api():
         "--reload"
     ]
     
-    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT))
+    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
     return process
 
 def start_nodejs_backend():
@@ -75,7 +75,7 @@ def start_nodejs_backend():
     
     env = os.environ.copy()
     env["CI"] = "true"  # Disable interactive mode
-    process = subprocess.Popen([npm_path, "start"], cwd=str(backend_dir), env=env)
+    process = subprocess.Popen([npm_path, "start"], cwd=str(backend_dir), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
     return process
 
 def start_dashboard():
@@ -88,7 +88,7 @@ def start_dashboard():
         "DashBoard/app.py"
     ]
     
-    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT))
+    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
     return process
 
 def start_frontend():
@@ -121,7 +121,7 @@ def start_frontend():
     env = os.environ.copy()
     env["REACT_APP_API_URL"] = "http://localhost:8000"
     env["CI"] = "true"  # Disable interactive mode
-    process = subprocess.Popen([npm_path, "start"], cwd=str(frontend_dir), env=env)
+    process = subprocess.Popen([npm_path, "start"], cwd=str(frontend_dir), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
     return process
 
 def main():
