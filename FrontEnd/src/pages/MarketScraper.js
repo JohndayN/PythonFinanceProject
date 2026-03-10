@@ -257,18 +257,24 @@ const MarketScraper = () => {
 			const result = await response.json();
 			
 			// Filter and process the data
-			if (result.data && result.data.length > 0) {
+			if (result && result.data && Array.isArray(result.data) && result.data.length > 0) {
 				const filtered = result.data.map(stock => {
 					// Handle both API field names and the fields returned by GetHOSEMarketData
-					const symbol = stock.symbol || stock.securitySymbol || 'N/A';
-					const name = stock.name || stock.company || 'N/A';
-					const price = parseFloat(stock.price || stock.close || 0);
-					const change = parseFloat(stock.pct_change || stock.change || 0);
-					const volume = parseFloat(stock.volume || 0);
+					const symbol = stock.securitySymbol || 'N/A';
+					const name = stock.securityName || 'N/A';
+
+					const price = parseFloat(stock.matchPrice || stock.priorClosePrice || 0);
+
+					const change =
+						stock.matchPrice && stock.priorClosePrice
+						? ((stock.matchPrice - stock.priorClosePrice) / stock.priorClosePrice) * 100
+						: 0;
+
+					const volume = parseFloat(stock.matchQtty || 0);
 					const open = stock.open && stock.open !== 'N/A' ? parseFloat(stock.open) : null;
 					const high = stock.high && stock.high !== 'N/A' ? parseFloat(stock.high) : null;
 					const low = stock.low && stock.low !== 'N/A' ? parseFloat(stock.low) : null;
-					
+
 					return {
 						securitySymbol: symbol,
 						name: name,
@@ -279,7 +285,7 @@ const MarketScraper = () => {
 						high: high,
 						low: low,
 					};
-				});
+					});
 				
 				setHoseData({
 					...result,

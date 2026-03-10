@@ -79,8 +79,10 @@ for symbol, g in grouped:
         "symbol": symbol,
         "prices": prices
     })
-#if market_df is not None:
-#    market_df.to_csv("vn_full_market.csv", index=False)s
+"""
+if market_df is not None:
+    market_df.to_csv("vn_full_market.csv", index=False)
+"""
 print("Documents created:", len(docs))
 df = pd.DataFrame(docs)
 df.to_csv("seperated_vn_market_output.csv", sep=',', encoding='utf-8', index=False)

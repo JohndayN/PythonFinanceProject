@@ -3,6 +3,7 @@
  */
 
 const axios = require("axios");
+const FormData = require("form-data");
 
 const PYTHON_API = process.env.PYTHON_API_URL || "http://localhost:8000";
 
@@ -10,8 +11,6 @@ const PYTHON_API = process.env.PYTHON_API_URL || "http://localhost:8000";
 const apiClient = axios.create({
     baseURL: PYTHON_API,
     timeout: 120000,
-    httpAgent: new http.Agent({ keepAlive: True, maxSockets: 50}),
-    httpsAgent: new https.Agent({ keepAlive: True, maxSockets: 50}), //Not used yet
     headers: {
         "Content-Type": "application/json"
     },
@@ -95,7 +94,6 @@ const detectHOSEAnomalies = async () => {
  */
 const detectFraudCSV = async (fileBuffer, filename) => {
     try {
-        const FormData = require("form-data");
         const form = new FormData();
         form.append("file", fileBuffer, filename);
 
@@ -114,7 +112,6 @@ const detectFraudCSV = async (fileBuffer, filename) => {
  */
 const detectFraudPDF = async (fileBuffer, filename) => {
     try {
-        const FormData = require("form-data");
         const form = new FormData();
         form.append("file", fileBuffer, filename);
 
@@ -133,7 +130,6 @@ const detectFraudPDF = async (fileBuffer, filename) => {
  */
 const detectComprehensiveFraud = async (fileBuffer, filename, ticker) => {
     try {
-        const FormData = require("form-data");
         const form = new FormData();
         form.append("file", fileBuffer, filename);
         if (ticker) form.append("ticker", ticker);

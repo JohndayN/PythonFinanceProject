@@ -5,11 +5,12 @@ exports.getAllTickers = async (req, res) => {
 
     const data = await db.collection("hybrid_fraud_scores")
         .aggregate([
+            { $sort: {time: -1}},
             {
                 $group: {
                     _id: "$ticker",
-                    latest_score: { $last: "$final_fraud_score" },
-                    risk_level: { $last: "$risk_level" }
+                    latest_score: { $first: "$final_fraud_score" },
+                    risk_level: { $first: "$risk_level" }
                 }
             }
         ])
@@ -19,12 +20,17 @@ exports.getAllTickers = async (req, res) => {
 };
 
 exports.getTickerRisk = async (req, res) => {
-    const db = mongoose.connection.db;
+    try {
+        const db = mongoose.connection.db;
 
-    const data = await db.collection("hybrid_fraud_scores")
-        .find({ ticker: req.params.ticker })
-        .sort({ time: 1 })
-        .toArray();
+        const data = await db.collection("hybrid_fraud_scores")
+            .find({ ticker: req.params.ticker })
+            .sort({ time: 1 })
+            .toArray();
 
-    res.json(data);
+        res.json(data);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Database error" });
+    }
 };

@@ -9,7 +9,7 @@ collection = db["portfolio_results"]
 def save_results(results):
 
     document = {
-        "timestamp": datetime.datetime.utcnow(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc),
         "results": results
     }
 
