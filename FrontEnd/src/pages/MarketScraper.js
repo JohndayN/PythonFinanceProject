@@ -260,23 +260,17 @@ const MarketScraper = () => {
 			if (result && result.data && Array.isArray(result.data) && result.data.length > 0) {
 				const filtered = result.data.map(stock => {
 					// Handle both API field names and the fields returned by GetHOSEMarketData
-					const symbol = stock.securitySymbol || 'N/A';
-					const name = stock.securityName || 'N/A';
-
-					const price = parseFloat(stock.matchPrice || stock.priorClosePrice || 0);
-
-					const change =
-						stock.matchPrice && stock.priorClosePrice
-						? ((stock.matchPrice - stock.priorClosePrice) / stock.priorClosePrice) * 100
-						: 0;
-
-					const volume = parseFloat(stock.matchQtty || 0);
+					const symbol = stock.symbol || stock.securitySymbol || 'N/A';
+					const name = stock.name || stock.company || 'N/A';
+					const price = parseFloat(stock.price || stock.close || 0);
+					const change = parseFloat(stock.pct_change || stock.change || 0);
+					const volume = parseFloat(stock.volume || 0);
 					const open = stock.open && stock.open !== 'N/A' ? parseFloat(stock.open) : null;
 					const high = stock.high && stock.high !== 'N/A' ? parseFloat(stock.high) : null;
 					const low = stock.low && stock.low !== 'N/A' ? parseFloat(stock.low) : null;
-
+					
 					return {
-						securitySymbol: symbol,
+						Symbol: symbol,
 						name: name,
 						price: price,
 						change: change,
@@ -608,7 +602,7 @@ const MarketScraper = () => {
 										{getPaginatedData().data.map((stock, index) => (
 											<tr key={index}>
 												<td className="ticker-cell">
-													<strong>{stock.securitySymbol}</strong>
+													<strong>{stock.Symbol}</strong>
 												</td>
 												<td>{stock.name}</td>
 												<td>{typeof stock.price === 'number' ? stock.price.toFixed(2) : 'N/A'}</td>
