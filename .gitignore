@@ -71,11 +71,12 @@ package-lock.json
 *.sqlite3
 .mongodb/
 **/db.js
-ProjectNote.txt
+
 
 # Logs
 logs/
 *.log
+ProjectNote.txt
 
 # OS
 .DS_Store
