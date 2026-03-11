@@ -101,29 +101,38 @@ def predict(ticker_data, days: int = 5) -> List[float]:
 
         volatility = returns.std()
         
+        if np.isnan(volatility):
+            volatility = 0.01
+        
+        seq_np = last_seq.cpu().numpy()[0]
+
         for _ in range(days):
 
             with torch.no_grad():
                 pred = model(last_seq)
 
-            pred_return = pred.cpu().numpy()[0][0]
+            pred_return = float(pred.cpu().numpy()[0][0])
 
             current_price = current_price * (1 + pred_return)
 
-            predictions.append(current_price)
+            predictions.append(float(current_price))
 
             band = current_price * volatility * 2
-
             upper_band.append(current_price + band)
             lower_band.append(current_price - band)
 
-            new_row = last_seq.cpu().numpy()[0][-1].copy()
-            new_row[0] = pred_return
+            new_row = seq_np[-1].copy()
 
-            new_seq = np.vstack((last_seq.cpu().numpy()[0][1:], new_row))
+            # update return feature
+            new_row[1] = pred_return
 
-            last_seq = torch.tensor(new_seq, dtype=torch.float32).unsqueeze(0).to(device)
-        
+            # scale row
+            new_row = scaler.transform([new_row])[0]
+
+            seq_np = np.vstack((seq_np[1:], new_row))
+
+            last_seq = torch.tensor(seq_np, dtype=torch.float32).unsqueeze(0).to(device)
+            
         manager = get_db_manager()
 
         manager.save_market_prediction_result(
