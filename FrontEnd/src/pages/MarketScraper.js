@@ -133,7 +133,7 @@ const MarketScraper = () => {
 			const result = await response.json();
 			
 			// Check if data is empty
-			if (!result.data || (!result.data.dates || result.data.dates.length === 0)) {
+			if (!result.data || (result.data.length === 0)) {
 				setError(`No data available for ${tickerInput} in the selected date range. Try a different date range or stock.`);
 				return;
 			}

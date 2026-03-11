@@ -46,6 +46,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+market_cache = {}
+CACHE_TTL = 60   # seconds
+
 #Handle error
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
@@ -171,8 +174,8 @@ async def fetch_market_data(request: MarketDataRequest):
         else:
             dates = df.index.astype(str).tolist()
         
-        close_prices = df['Close'].tolist() if 'close' in df.columns else []
-        volumes = df['Volume'].tolist() if 'volume' in df.columns else []
+        close_prices = df['close'].tolist() if 'close' in df.columns else []
+        volumes = df['volume'].tolist() if 'volume' in df.columns else []
         
         return MarketDataResponse(
             ticker=request.ticker,
@@ -299,7 +302,7 @@ async def detect_anomalies(request: MarketDataRequest):
         except Exception as e:
             # If feature creation fails, use simplified approach
             features = pd.DataFrame({
-                'return': df['Close'].pct_change() if 'Close' in df.columns else [0] * len(df)
+                'return': df['close'].pct_change() if 'close' in df.columns else [0] * len(df)
             }).fillna(0)
         
         if features is None or features.empty or len(features) < 10:
@@ -357,146 +360,150 @@ async def detect_hose_anomalies():
 
 # ===================== PORTFOLIO OPTIMIZATION ENDPOINTS =====================
 
+async def process_ticker(ticker: str, request):
+    ticker_upper = ticker.upper().strip()
+
+    try:
+        # Try MongoDB first
+        try:
+            db = db_manager.get_db()
+            ticker_data = db['mixed_ticker_data'].find_one({'symbol': ticker_upper})
+
+            if ticker_data and 'daily_data' in ticker_data:
+                daily_list = ticker_data['daily_data']
+                if daily_list:
+                    df = pd.DataFrame(daily_list)
+                    df.columns = df.columns.str.lower()
+
+                    df['close'] = pd.to_numeric(df.get('close', 0), errors='coerce')
+                    df['volume'] = pd.to_numeric(df.get('volume', 0), errors='coerce')
+
+                    print(f"Loaded {ticker_upper} from MongoDB")
+                else:
+                    df = None
+            else:
+                df = None
+
+        except Exception:
+            df = None
+
+        # fallback API
+        if df is None or df.empty:
+            df = await asyncio.wait_for(
+                run_in_threadpool(
+                    get_market_data,
+                    ticker_upper,
+                    request.start_date or config.start_date,
+                    request.end_date or config.end_date
+                ),
+                timeout=10
+            )
+
+            if df is not None:
+                df.columns = df.columns.str.lower()
+
+        if df is None or df.empty:
+            return None
+
+        # returns
+        if 'return' in df.columns:
+            returns = df['return'].dropna().values
+        else:
+            returns = df['close'].pct_change().dropna().values
+
+        if len(returns) < 2:
+            return None
+
+        # features
+        try:
+            features = create_market_features(df)
+        except:
+            features = pd.DataFrame({'return': returns})
+
+        try:
+            fraud_score = compute_risk_score(features.values)
+        except:
+            fraud_score = 0.5
+
+        return {
+            "ticker": ticker_upper,
+            "df": df,
+            "returns": returns,
+            "fraud_score": fraud_score
+        }
+
+    except Exception as e:
+        print(f"Error processing {ticker}: {e}")
+        return None
+
 @app.post("/api/portfolio/optimize", response_model=PortfolioOptimizationResponse)
 async def optimize_portfolio(request: PortfolioOptimizationRequest):
-    """
-    Optimize portfolio weights based on fraud scores and risk for multiple assets
-    """
+
     try:
-        # Validate input
         if not request.tickers or len(request.tickers) < 1:
-            raise HTTPException(status_code=400,detail="At least 1 ticker required")
-        
-        # Fetch data for all tickers
+            raise HTTPException(status_code=400, detail="At least 1 ticker required")
+
+        print(f"Fetching data for {len(request.tickers)} tickers...")
+
+        # ================= FETCH TICKERS CONCURRENTLY =================
+        tasks = [process_ticker(ticker, request) for ticker in request.tickers]
+        results = await asyncio.wait_for(
+            asyncio.gather(*tasks),
+            timeout=20
+        )
+
         market_data = {}
         returns_data = {}
         fraud_scores = {}
         valid_tickers = []
-        
-        print(f"Fetching data for {len(request.tickers)} tickers...")
-        
-        for ticker in request.tickers:
-            try:
-                ticker_upper = ticker.upper().strip()
-                
-                # Try MongoDB first
-                try:
-                    db = db_manager.get_db()
-                    ticker_data = db['mixed_ticker_data'].find_one({'symbol': ticker_upper})
-                    if ticker_data and 'daily_data' in ticker_data:
-                        daily_list = ticker_data['daily_data']
-                        if daily_list and len(daily_list) > 0:
-                            df = pd.DataFrame(daily_list)
-                            df['Close'] = pd.to_numeric(df.get('close', df.get('Close', 0)), errors='coerce')
-                            df['Volume'] = pd.to_numeric(df.get('volume', df.get('Volume', 0)), errors='coerce')
-                            print(f"Loaded {ticker_upper} from MongoDB ({len(df)} records)")
-                        else:
-                            df = None
-                    else:
-                        df = None
-                except Exception as db_err:
-                    print(f"MongoDB lookup failed for {ticker_upper}: {str(db_err)}")
-                    df = None
-                
-                # Fallback to API if MongoDB doesn't have data
-                if df is None or df.empty:
-                    try:
-                        df = await asyncio.wait_for(
-                            run_in_threadpool(
-                                get_market_data,
-                                ticker_upper,
-                                request.start_date or config.start_date,
-                                request.end_date or config.end_date
-                            ),
-                            timeout=10.0
-                        )
-                        print(f"Fetched {ticker_upper} from API ({len(df) if df is not None else 0} records)")
-                    except asyncio.TimeoutError:
-                        print(f"Timeout fetching {ticker_upper}")
-                        df = None
-                    except Exception as api_err:
-                        print(f"API fetch failed for {ticker_upper}: {str(api_err)}")
-                        df = None
-                
-                if df is None or df.empty:
-                    print(f"No data for ticker {ticker_upper}")
-                    continue
-                
-                market_data[ticker_upper] = df
-                valid_tickers.append(ticker_upper)
-                
-                # Get returns from the data
-                if 'return' in df.columns:
-                    returns_data[ticker_upper] = df['return'].dropna().values
-                elif 'Close' in df.columns:
-                    returns_data[ticker_upper] = df['Close'].pct_change().dropna().values
-                else:
-                    print(f"No Close price data for {ticker_upper}")
-                    if ticker_upper in valid_tickers:
-                        valid_tickers.remove(ticker_upper)
-                    continue
-                
-                # Create features for fraud scoring
-                try:
-                    if isinstance(df, pd.DataFrame) and not df.empty:
-                        features = create_market_features(df)
-                    else:
-                        features = pd.DataFrame({'return': returns_data[ticker_upper]})
-                except Exception as feat_err:
-                    print(f"Feature creation failed for {ticker_upper}: {str(feat_err)}")
-                    features = pd.DataFrame({'return': returns_data[ticker_upper]})
-                
-                # Get fraud score
-                try:
-                    fraud_scores[ticker_upper] = compute_risk_score(features.values if isinstance(features, pd.DataFrame) else features)
-                except Exception as risk_err:
-                    print(f"Risk score calculation failed for {ticker_upper}: {str(risk_err)}")
-                    fraud_scores[ticker_upper] = 0.5  # Default to neutral risk
-            
-            except Exception as e:
-                print(f"Error processing ticker {ticker}: {str(e)}")
+
+        for r in results:
+            if r is None:
                 continue
-        
+
+            ticker = r["ticker"]
+
+            market_data[ticker] = r["df"]
+            returns_data[ticker] = r["returns"]
+            fraud_scores[ticker] = r["fraud_score"]
+
+            valid_tickers.append(ticker)
+
         if len(valid_tickers) < 1:
-            raise HTTPException(status_code=400, detail=f"No valid tickers found")
-        
-        # Align returns to same length for covariance calculation
+            raise HTTPException(status_code=400, detail="No valid tickers found")
+
+        # ================= ALIGN RETURNS =================
         min_len = min(len(r) for r in returns_data.values())
+
         if min_len < 2:
-            raise HTTPException(status_code=400, detail=f"Insufficient return data. Min length: {min_len}, need at least 2.")
-        aligned_returns = {}
-        for ticker, returns in returns_data.items():
-            aligned_returns[ticker] = returns[-min_len:] if len(returns) > min_len else returns
-        
-        # Create returns array for covariance
+            raise HTTPException(status_code=400, detail="Insufficient return data")
+
+        aligned_returns = {
+            ticker: returns[-min_len:]
+            for ticker, returns in returns_data.items()
+        }
+
         returns_array = np.array([aligned_returns[t] for t in valid_tickers])
-        
-        # Calculate expected returns and covariance with error handling
-        try:
-            expected_returns = np.nanmean(returns_array, axis=1)
-            expected_returns = np.nan_to_num(expected_returns, nan=0.001)  # Default 0.1% if NaN
-            
-            # Ensure sufficient data for covariance
-            if len(valid_tickers) == 1:
-                cov_matrix = np.array([[np.var(returns_array[0])]])
-            else:
-                cov_matrix = np.cov(returns_array)
-            
-            # Handle 1D cov_matrix (single asset case, though we require 2+)
-            if cov_matrix.ndim == 1:
-                cov_matrix = np.diag(cov_matrix)
-            
-            # Clean NaN values
-            if np.isnan(cov_matrix).any():
-                cov_matrix = np.eye(len(valid_tickers)) * 0.01
-        except Exception as e:
-            print(f"Covariance calculation error: {str(e)}")
-            expected_returns = np.ones(len(valid_tickers)) * 0.001
+
+        # ================= EXPECTED RETURNS =================
+        expected_returns = np.nanmean(returns_array, axis=1)
+        expected_returns = np.nan_to_num(expected_returns, nan=0.001)
+
+        # ================= COVARIANCE =================
+        if len(valid_tickers) == 1:
+            cov_matrix = np.array([[np.var(returns_array[0])]])
+        else:
+            cov_matrix = np.cov(returns_array)
+
+        if cov_matrix.ndim == 1:
+            cov_matrix = np.diag(cov_matrix)
+
+        if np.isnan(cov_matrix).any():
             cov_matrix = np.eye(len(valid_tickers)) * 0.01
-        
+
         fraud_scores_array = np.array([fraud_scores.get(t, 0.5) for t in valid_tickers])
-        
-        # Optimize with fallback
+
+        # ================= OPTIMIZATION =================
         try:
             optimal_weights = optimize_portfolio_mean_variance_fraud(
                 expected_returns=expected_returns,
@@ -506,43 +513,45 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
                 beta=request.fraud_penalty
             )
         except Exception as e:
-            print(f"Optimization error: {str(e)}")
-            # Simple equal-weight fallback
+            print(f"Optimization error: {e}")
             optimal_weights = np.ones(len(valid_tickers)) / len(valid_tickers)
-        
-        # Normalize weights to sum to 1
+
         optimal_weights = optimal_weights / np.sum(optimal_weights)
-        
-        # Calculate metrics
+
+        # ================= METRICS =================
         portfolio_return = np.dot(optimal_weights, expected_returns)
         portfolio_variance = np.dot(optimal_weights.T, np.dot(cov_matrix, optimal_weights))
-        portfolio_volatility = np.sqrt(abs(portfolio_variance))  # abs to handle negative variance
-        
-        # Calculate Sharpe Ratio (assuming risk-free rate of 2%)
+        portfolio_volatility = np.sqrt(abs(portfolio_variance))
+
         risk_free_rate = 0.02
-        sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility if portfolio_volatility > 0.0001 else 0
-        
+
+        sharpe_ratio = (
+            (portfolio_return - risk_free_rate) / portfolio_volatility
+            if portfolio_volatility > 0.0001
+            else 0
+        )
+
         result = {
-            "weights": {ticker: float(weight) for ticker, weight in zip(valid_tickers, optimal_weights)},
+            "weights": {t: float(w) for t, w in zip(valid_tickers, optimal_weights)},
             "expected_return": float(portfolio_return),
             "volatility": float(portfolio_volatility),
             "sharpe_ratio": float(sharpe_ratio),
             "status": "success"
         }
-        
-        # Save to MongoDB
+
         try:
             db_manager.save_portfolio_optimization_result(valid_tickers, result)
         except Exception as db_err:
-            print(f"Could not save to MongoDB: {str(db_err)}")
-        
+            print(f"MongoDB save failed: {db_err}")
+
         return PortfolioOptimizationResponse(**result)
-    
+
     except HTTPException:
         raise
+
     except Exception as e:
         print(f"Error in portfolio optimization: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)[:100]}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # ===================== FRAUD DETECTION ENDPOINTS =====================
 
@@ -862,7 +871,7 @@ async def get_trend_analysis_history(limit: int = 10):
 
 # ===================== STARTUP/SHUTDOWN EVENTS =====================
 
-@app.on_event("startup")
+@app.lifespan("startup")
 async def startup_event():
     """
     Initialize database connection on startup
@@ -872,7 +881,7 @@ async def startup_event():
         print(f"Database connection established: {db_manager.db_name}")
         db_manager.create_indexes()
 
-@app.on_event("shutdown")
+@app.lifespan("shutdown")
 async def shutdown_event():
     """
     Close database connection on shutdown
