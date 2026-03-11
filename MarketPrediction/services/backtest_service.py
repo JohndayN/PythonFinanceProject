@@ -1,15 +1,15 @@
 import numpy as np
 import torch
-from services.predict_service import load_model
-from services.data_service import download_data
+from services.predict_service import predict
+from services.data_service import load_data
 import config
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def backtest(ticker):
-    model, scaler = load_model(ticker)
+    model, scaler = predict(ticker)
 
-    df = download_data(ticker, years=2)
+    df = load_data(ticker, years=2)
     prices = df["Close"].values
 
     scaled = scaler.transform(df.values)

@@ -9,6 +9,7 @@ import datetime
 import config
 import json
 from typing import Dict, Any, Optional
+import pandas as pd
 
 class MongoDBManager:
     def __init__(self, uri: str = None, db_name: str = None, timeout: int = 5000):
@@ -177,11 +178,13 @@ class MongoDBManager:
             collection = self.db["market_prediction_results"]
             document = {
                 "timestamp": datetime.datetime.utcnow(),
-                "ticker": ticker,
+                "ticker": ticker.upper(),
                 "days_predicted": days,
                 "predictions": result.get("predictions", []),
                 "confidence": float(result.get("confidence", 0)),
-                "status": result.get("status", "pending")
+                "model": result.get("model", "LSTM_Attention"),
+                "features_used": result.get("features_used", []),
+                "status": result.get("status", "completed")
             }
             
             inserted = collection.insert_one(document)
@@ -228,7 +231,6 @@ class MongoDBManager:
             # Fraud detection indexes
             self.db["fraud_detection_results"].create_index("timestamp")
             self.db["fraud_detection_results"].create_index("file_type")
-            self.db["fraud_detection_results"].create_index("ticker")
             
             # Anomaly detection indexes
             self.db["anomaly_detection_results"].create_index("ticker")
@@ -241,6 +243,7 @@ class MongoDBManager:
             # Market prediction indexes
             self.db["market_prediction_results"].create_index("ticker")
             self.db["market_prediction_results"].create_index("timestamp")
+            self.db["market_prediction_results"].create_index([("ticker", 1), ("timestamp", -1)])
             
             # Trend analysis indexes
             self.db["trend_analysis_results"].create_index("ticker")
@@ -401,7 +404,45 @@ class MongoDBManager:
         except Exception as e:
             print(f"Error fetching results from {collection_name}: {str(e)}")
             return []
+        
+    def get_stock_df(self, symbol: str, limit: int = 500):
 
+        records = self.get_stock_from_ticker_db(symbol, limit)
+
+        if not records:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(records)
+        
+        df.columns = [c.lower() for c in df.columns]
+
+        if "close" in df.columns:
+            df["Close"] = df["close"]
+
+        df["time"] = pd.to_datetime(df["time"])
+
+        df = df.sort_values("time")
+
+        return df
+
+    def get_latest_prediction(self, ticker: str):
+        try:
+
+            collection = self.db["market_prediction_results"]
+
+            result = collection.find_one(
+                {"ticker": ticker.upper()},
+                sort=[("timestamp", -1)]
+            )
+
+            if result and "_id" in result:
+                result["_id"] = str(result["_id"])
+
+            return result
+
+        except Exception as e:
+            print(f"Error getting latest prediction: {e}")
+            return None
 
 # Global manager instance
 db_manager = None

@@ -35,6 +35,7 @@ from FraudDetection.fraud_detection_pdf import detect_fraud_pdf, detect_comprehe
 
 # --- LSTM ---
 from MarketPrediction.services.predict_service import predict
+from MarketPrediction.services.feature_service import create_features
 
 # Initialize database manager
 db_manager = get_db_manager()

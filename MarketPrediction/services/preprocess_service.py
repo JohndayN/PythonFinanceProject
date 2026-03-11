@@ -28,7 +28,7 @@ def add_features(df):
     df["ma_50"] = df["Close"].rolling(50).mean()
     df["volatility"] = df["return"].rolling(20).std()
 
-    df["target"] = (df["return"].shift(-1) > 0).astype(int)
+    df["target"] = df["return"].shift(-1)
 
     df = df.dropna()
 

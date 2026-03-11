@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Pages.css';
 import './MarketScraper.css';
+import CandlestickChart from '../components/CandlestickChart';
 
 const MarketScraper = () => {
 	const [ticker, setTicker] = useState('VCB');
@@ -11,6 +12,7 @@ const MarketScraper = () => {
 	const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 	const [loading, setLoading] = useState(false);
 	const [data, setData] = useState(null);
+	const [viewMode, setViewMode] = useState("table");
 	const [error, setError] = useState(null);
 	const [availableTickers, setAvailableTickers] = useState([]);
 	const [hoseData, setHoseData] = useState(null);
@@ -489,11 +491,21 @@ const MarketScraper = () => {
 					<div className="results-card">
 						<div className="results-header">
 							<h2>{tickerInput} Market Data</h2>
-							<button onClick={downloadCSV} className="download-button">
-								Download CSV
-							</button>
-						</div>
 
+							<div className="view-buttons">
+								<button onClick={() => setViewMode("table")} className={`view-btn ${viewMode === "table" ? "active" : ""}`}>
+								Table
+								</button>
+
+								<button onClick={() => setViewMode("chart")} className={`view-btn ${viewMode === "chart" ? "active" : ""}`}>
+								Chart
+								</button>
+
+								<button onClick={downloadCSV} className="download-button">
+								Download CSV
+								</button>
+							</div>
+						</div>
 						<div className="data-summary">
 							<div className="summary-item">
 								<span>Data Points</span>
@@ -513,26 +525,41 @@ const MarketScraper = () => {
 							</div>
 						</div>
 
+						{viewMode === "table" ? (
+
 						<div className="data-table-container">
-							<table className="data-table">
-								<thead>
-									<tr>
-										<th>Date</th>
-										<th>Close Price</th>
-										<th>Volume</th>
-									</tr>
-								</thead>
-								<tbody>
-									{data.data.dates?.map((date, index) => (
-										<tr key={index}>
-											<td>{date}</td>
-											<td>{data.data.close?.[index]?.toFixed(2)}</td>
-											<td>{data.data.volume?.[index]?.toLocaleString()}</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
+						<table className="data-table">
+							<thead>
+							<tr>
+								<th>Date</th>
+								<th>Close Price</th>
+								<th>Volume</th>
+							</tr>
+							</thead>
+							<tbody>
+							{data.data.dates?.map((date, index) => (
+								<tr key={index}>
+								<td>{date}</td>
+								<td>{data.data.close?.[index]?.toFixed(2)}</td>
+								<td>{data.data.volume?.[index]?.toLocaleString()}</td>
+								</tr>
+							))}
+							</tbody>
+						</table>
 						</div>
+
+						) : (
+
+						<CandlestickChart
+						data={data.data.dates.map((date, i) => ({
+							date: date,
+							open: data.data.open?.[i],
+							high: data.data.high?.[i],
+							low: data.data.low?.[i],
+							close: data.data.close?.[i]
+						}))}
+						/>
+						)}
 					</div>
 				)}
 			</div>
