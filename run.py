@@ -1,14 +1,19 @@
 import subprocess
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
 import sys
 import time
 import shutil
 from pathlib import Path
-
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
-
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+env = os.environ.copy()
+env["PYTHONUTF8"] = "1"
 import config
 
 def check_dependencies():
@@ -48,7 +53,7 @@ def start_python_api():
         "--reload"
     ]
     
-    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), encoding="utf-8", errors="ignore")
+    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), encoding="utf-8", errors="ignore", env=env)
     return process
 
 def start_nodejs_backend():
@@ -75,7 +80,7 @@ def start_nodejs_backend():
     
     env = os.environ.copy()
     env["CI"] = "true"  # Disable interactive mode
-    process = subprocess.Popen([npm_path, "start"], cwd=str(backend_dir), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
+    process = subprocess.Popen([npm_path, "start"], cwd=str(backend_dir), env=env, stdout=None, stderr=None, encoding="utf-8", errors="ignore")
     return process
 
 def start_dashboard():
@@ -88,7 +93,7 @@ def start_dashboard():
         "DashBoard/app.py"
     ]
     
-    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
+    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), stdout=None, stderr=None, encoding="utf-8", errors="ignore")
     return process
 
 def start_frontend():
@@ -121,7 +126,7 @@ def start_frontend():
     env = os.environ.copy()
     env["REACT_APP_API_URL"] = "http://localhost:8000"
     env["CI"] = "true"  # Disable interactive mode
-    process = subprocess.Popen([npm_path, "start"], cwd=str(frontend_dir), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
+    process = subprocess.Popen([npm_path, "start"], cwd=str(frontend_dir), env=env, stdout=None, stderr=None, encoding="utf-8", errors="ignore")
     return process
 
 def main():

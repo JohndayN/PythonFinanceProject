@@ -10,6 +10,11 @@ import config
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
+def normalize_columns(df):
+    df.columns = [c.lower() for c in df.columns]
+
+    return df
+
 def normalize_date(date_str):
     try:
         return datetime.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
@@ -47,6 +52,14 @@ def get_market_data(ticker, start_date=None, end_date=None):
             print(f"No data returned for {ticker} with Vnstock")
             return None
         
+        df = normalize_columns(df)
+        
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"])
+            df = df.set_index("time")
+
+        df = df.sort_index()
+        
         df["symbol"] = ticker
         df["return"] = df["close"].pct_change()
         df["log_return"] = np.log(df["close"] / df["close"].shift(1))
@@ -64,16 +77,17 @@ def get_market_data(ticker, start_date=None, end_date=None):
         df = yf.download(yf_ticker, start=start_date, end=end_date, progress=False)
 
         if df is not None and not df.empty:
-
+            df = normalize_columns(df)
+            
             result = pd.DataFrame()
             result.index = df.index
-
-            result["Close"] = df["Close"]
-            result["Volume"] = df["Volume"]
+            
+            result["close"] = df["close"]
+            result["volume"] = df["volume"]
             result["symbol"] = ticker
 
-            result["return"] = result["Close"].pct_change()
-            result["log_return"] = np.log(result["Close"] / result["Close"].shift(1))
+            result["return"] = result["close"].pct_change()
+            result["log_return"] = np.log(result["close"] / result["close"].shift(1))
 
             result = result.dropna(subset=["return"])
 

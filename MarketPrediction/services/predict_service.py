@@ -9,6 +9,7 @@ from MarketPrediction.models.train_price_model import train_model
 
 MODEL_CACHE = {}
 SCALER_CACHE = {}
+TRAINING_LOCK = set()
 
 ARTIFACT_DIR = "MarketPrediction/models/artifacts"
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
@@ -21,7 +22,6 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
             df = load_data(ticker_data)
         else:
             df = ticker_data
-            ticker = df.attrs.get("ticker")
             
             if ticker is None:
                 raise ValueError("Ticker missing from dataframe. Pass ticker explicitly.")  
@@ -44,11 +44,14 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
         model_path = os.path.join(ARTIFACT_DIR, f"{ticker}_model.pth")
         scaler_path = os.path.join(ARTIFACT_DIR, f"{ticker}_scaler.pkl")
 
-        if not os.path.exists(model_path):
-
+        if not os.path.exists(model_path) and ticker not in TRAINING_LOCK:
+            TRAINING_LOCK.add(ticker)
+            
             print(f"No model for {ticker}. Training...")
 
             train_model(ticker)
+            
+            TRAINING_LOCK.remove(ticker)
 
             if not os.path.exists(model_path) or not os.path.exists(scaler_path):
                 print("Training failed, using fallback forecast.")
@@ -62,7 +65,7 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
 
             scaler = joblib.load(scaler_path)
 
-            model = LSTMModel().to(device)
+            model = LSTMModel(input_size=5).to(device)
             model.load_state_dict(torch.load(model_path, map_location=device))
             model.eval()
 
@@ -75,20 +78,30 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
         seq_length = 30
 
         feature_cols = [
-            "Close",
+            "close",
             "return",
             "ma_10",
             "ma_50",
             "volatility"
         ]
-        
+
+        from MarketPrediction.services.feature_service import create_features
+
+        df.columns = [c.lower() for c in df.columns]
+
+        df = create_features(df)
+
+        df = df.dropna()
+
+        if len(df) < seq_length:
+            return generate_simple_forecast(df, days)
+
         missing = [c for c in feature_cols if c not in df.columns]
 
         if missing:
-            from MarketPrediction.services.feature_service import create_features
-            df = create_features(df)
+            raise ValueError(f"Missing features: {missing}")
 
-        features = df.reindex(columns=feature_cols).values
+        features = df[feature_cols].values
 
         scaled = scaler.transform(features)
 
