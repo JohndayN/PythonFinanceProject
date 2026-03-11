@@ -871,7 +871,7 @@ async def get_trend_analysis_history(limit: int = 10):
 
 # ===================== STARTUP/SHUTDOWN EVENTS =====================
 
-@app.lifespan("startup")
+@app.on_event("startup")
 async def startup_event():
     """
     Initialize database connection on startup
@@ -881,7 +881,7 @@ async def startup_event():
         print(f"Database connection established: {db_manager.db_name}")
         db_manager.create_indexes()
 
-@app.lifespan("shutdown")
+@app.on_event("shutdown")
 async def shutdown_event():
     """
     Close database connection on shutdown

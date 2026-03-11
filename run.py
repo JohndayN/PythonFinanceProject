@@ -48,7 +48,7 @@ def start_python_api():
         "--reload"
     ]
     
-    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="ignore")
+    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), encoding="utf-8", errors="ignore")
     return process
 
 def start_nodejs_backend():
