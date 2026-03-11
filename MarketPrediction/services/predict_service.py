@@ -10,8 +10,10 @@ from MarketPrediction.models.train_price_model import train_model
 MODEL_CACHE = {}
 SCALER_CACHE = {}
 
-def predict(ticker_data, days: int = 5) -> List[float]:
+ARTIFACT_DIR = "MarketPrediction/models/artifacts"
+os.makedirs(ARTIFACT_DIR, exist_ok=True)
 
+def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
     try:
         if isinstance(ticker_data, str):
             ticker = ticker_data
@@ -19,7 +21,10 @@ def predict(ticker_data, days: int = 5) -> List[float]:
             df = load_data(ticker_data)
         else:
             df = ticker_data
-            ticker = df.attrs.get("ticker", "unknown")
+            ticker = df.attrs.get("ticker")
+            
+            if ticker is None:
+                raise ValueError("Ticker missing from dataframe. Pass ticker explicitly.")  
 
         if df is None or df.empty:
             return [0.0] * days
@@ -36,8 +41,8 @@ def predict(ticker_data, days: int = 5) -> List[float]:
         else:
             last_price = float(df.iloc[-1, 0])
 
-        model_path = f"MarketPrediction/models/artifacts/{ticker}_model.pth"
-        scaler_path = f"MarketPrediction/models/artifacts/{ticker}_scaler.pkl"
+        model_path = os.path.join(ARTIFACT_DIR, f"{ticker}_model.pth")
+        scaler_path = os.path.join(ARTIFACT_DIR, f"{ticker}_scaler.pkl")
 
         if not os.path.exists(model_path):
 
@@ -45,7 +50,7 @@ def predict(ticker_data, days: int = 5) -> List[float]:
 
             train_model(ticker)
 
-            if not os.path.exists(model_path):
+            if not os.path.exists(model_path) or not os.path.exists(scaler_path):
                 print("Training failed, using fallback forecast.")
                 return generate_simple_forecast(df, days)
 
@@ -83,7 +88,7 @@ def predict(ticker_data, days: int = 5) -> List[float]:
             from MarketPrediction.services.feature_service import create_features
             df = create_features(df)
 
-        features = df[feature_cols].values
+        features = df.reindex(columns=feature_cols).values
 
         scaled = scaler.transform(features)
 
@@ -124,6 +129,7 @@ def predict(ticker_data, days: int = 5) -> List[float]:
             new_row = seq_np[-1].copy()
 
             # update return feature
+            new_row[0] = current_price
             new_row[1] = pred_return
 
             # scale row
