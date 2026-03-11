@@ -18,8 +18,8 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
     try:
         if isinstance(ticker_data, str):
             ticker = ticker_data
-            from MarketPrediction.services.data_service import load_data
-            df = load_data(ticker_data)
+            db = get_db_manager()
+            df = db.get_stock_df(ticker, limit=800)
         else:
             df = ticker_data
             
@@ -30,12 +30,12 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
             return [0.0] * days
         
         if len(df) < 100:
-            print(f"Data for {ticker} not enough to predict. Changing to simple forecast")
+            print(f"Data for {ticker} not enough to predict. changing to simple forecast")
             return generate_simple_forecast(df, days)
 
         # get last price
-        if 'Close' in df.columns:
-            last_price = float(df['Close'].iloc[-1])
+        if 'close' in df.columns:
+            last_price = float(df['close'].iloc[-1])
         elif 'close' in df.columns:
             last_price = float(df['close'].iloc[-1])
         else:
@@ -90,8 +90,8 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
         df.columns = [c.lower() for c in df.columns]
 
         df = create_features(df)
-
-        df = df.dropna()
+        
+        print("columns after feature creation:", df.columns.tolist())
 
         if len(df) < seq_length:
             return generate_simple_forecast(df, days)
@@ -115,7 +115,7 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
 
         current_price = last_price
 
-        returns = df["Close"].pct_change().dropna()
+        returns = df["close"].pct_change().dropna()
 
         volatility = returns.std()
         
@@ -144,9 +144,6 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
             # update return feature
             new_row[0] = current_price
             new_row[1] = pred_return
-
-            # scale row
-            new_row = scaler.transform([new_row])[0]
 
             seq_np = np.vstack((seq_np[1:], new_row))
 
@@ -185,12 +182,12 @@ def generate_simple_forecast(df: pd.DataFrame, days: int) -> List[float]:
         # Get close prices
         if 'close' in df.columns:
             prices = df['close'].values
-        elif 'Close' in df.columns:
-            prices = df['Close'].values
+        elif 'close' in df.columns:
+            prices = df['close'].values
         else:
             prices = df.iloc[:, 0].values
         
-        # Calculate average daily return
+        # calculate average daily return
         returns = np.diff(prices) / prices[:-1]
         avg_return = np.mean(returns) if len(returns) > 0 else 0.0
         
@@ -203,7 +200,11 @@ def generate_simple_forecast(df: pd.DataFrame, days: int) -> List[float]:
             current_price = current_price * (1 + avg_return)
             forecast.append(float(current_price))
         
-        return forecast
+        return {
+            "prediction": forecast,
+            "upper": forecast,
+            "lower": forecast
+        }
     
     except Exception as e:
         print(f"Forecast error: {str(e)}")

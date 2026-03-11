@@ -8,17 +8,30 @@ def split_data(df, train_ratio):
     return train_df, test_df
 
 def scale_data(train_df, test_df):
-    scaler = StandardScaler()
-    train_scaled = scaler.fit_transform(train_df)
-    test_scaled = scaler.transform(test_df)
-    return train_scaled, test_scaled, scaler
 
-def create_sequences(data, seq_length):
-    X, y = [], []
-    for i in range(len(data) - seq_length):
-        X.append(data[i:i+seq_length])
-        y.append(data[i+seq_length])
-    return np.array(X), np.array(y)
+    feature_cols = ["Close", "return", "ma_10", "ma_50", "volatility"]
+
+    scaler = StandardScaler()
+
+    X_train = scaler.fit_transform(train_df[feature_cols])
+    X_test = scaler.transform(test_df[feature_cols])
+
+    y_train = train_df["target"].values
+    y_test = test_df["target"].values
+
+    return X_train, X_test, y_train, y_test, scaler
+
+def create_sequences(X, y, seq_length):
+
+    X_seq = []
+    y_seq = []
+
+    for i in range(len(X) - seq_length):
+
+        X_seq.append(X[i:i + seq_length])
+        y_seq.append(y[i + seq_length])
+
+    return np.array(X_seq), np.array(y_seq)
 
 def add_features(df):
     df = df.copy()
@@ -33,3 +46,16 @@ def add_features(df):
     df = df.dropna()
 
     return df
+
+def preprocess_pipeline(df, seq_length=30, train_ratio=0.8):
+
+    df = add_features(df)
+
+    train_df, test_df = split_data(df, train_ratio)
+
+    X_train, X_test, y_train, y_test, scaler = scale_data(train_df, test_df)
+
+    X_train, y_train = create_sequences(X_train, y_train, seq_length)
+    X_test, y_test = create_sequences(X_test, y_test, seq_length)
+
+    return X_train, y_train, X_test, y_test, scaler

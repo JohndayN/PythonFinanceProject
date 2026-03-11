@@ -720,7 +720,7 @@ async def predict_market(ticker: str, days: int = 5):
         
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        predictions = predict(df, ticker,days)
+        predictions = predict(df, ticker, days)
         result = {
             "ticker": ticker.upper(),
             "predictions": predictions,

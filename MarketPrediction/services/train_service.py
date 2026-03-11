@@ -5,7 +5,7 @@ import joblib
 from torch.utils.data import DataLoader, TensorDataset
 
 from MarketPrediction.models.lstm import LSTMModel
-from MarketPrediction.services.data_service import load_data
+from Database.MongoDBManager import get_db_manager
 from MarketPrediction.services.feature_service import create_features, scale_split
 
 
@@ -15,8 +15,8 @@ ARTIFACT_DIR = "MarketPrediction/models/artifacts"
 def train_model(ticker, epochs=20, lr=0.001, batch_size=32):
 
     os.makedirs(ARTIFACT_DIR, exist_ok=True)
-
-    df = load_data(ticker)
+    db = get_db_manager()
+    df = db.get_stock_df(ticker, limit=800)
 
     if df is None or df.empty:
         raise ValueError(f"No data found for {ticker}")

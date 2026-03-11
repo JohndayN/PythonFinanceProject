@@ -7,20 +7,20 @@ import os
 
 from MarketPrediction.models.lstm import LSTMModel
 from MarketPrediction.services.feature_service import create_features
-from MarketPrediction.services.data_service import load_data
+from Database.MongoDBManager import get_db_manager
 from MarketPrediction.services.feature_service import scale_split
 
 
 def train_model(ticker):
 
     print(f"Training model for {ticker}")
-
-    df = load_data(ticker)
+    db = get_db_manager()
+    df = db.get_stock_df(ticker, limit=800)
 
     df = create_features(df)
 
     X_train, y_train, X_test, y_test, scaler = scale_split(df)
-
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = LSTMModel(input_size=5).to(device)

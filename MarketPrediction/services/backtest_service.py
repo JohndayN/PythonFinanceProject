@@ -1,15 +1,15 @@
 import numpy as np
 import torch
-from services.predict_service import predict
-from services.data_service import load_data
+from MarketPrediction.services.predict_service import predict
+from Database.MongoDBManager import get_db_manager
 import config
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def backtest(ticker):
     model, scaler = predict(ticker)
-
-    df = load_data(ticker, years=2)
+    db = get_db_manager()
+    df = db.get_stock_df(ticker)
     prices = df["Close"].values
 
     scaled = scaler.transform(df.values)

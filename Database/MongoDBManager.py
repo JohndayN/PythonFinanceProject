@@ -405,7 +405,7 @@ class MongoDBManager:
             print(f"Error fetching results from {collection_name}: {str(e)}")
             return []
         
-    def get_stock_df(self, symbol: str, limit: int = 500):
+    def get_stock_df(self, symbol: str, limit: 1096):
 
         records = self.get_stock_from_ticker_db(symbol, limit)
 
@@ -413,7 +413,7 @@ class MongoDBManager:
             return pd.DataFrame()
 
         df = pd.DataFrame(records)
-        
+
         df.columns = [c.lower() for c in df.columns]
 
         if "close" in df.columns:
@@ -422,6 +422,10 @@ class MongoDBManager:
         df["time"] = pd.to_datetime(df["time"])
 
         df = df.sort_values("time")
+
+        df = df.set_index("time")
+
+        df.attrs["ticker"] = symbol
 
         return df
 

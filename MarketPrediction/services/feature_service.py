@@ -2,24 +2,23 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 
+
 def create_features(df: pd.DataFrame):
+
+    df = df.copy()
+    df.columns = [c.lower() for c in df.columns]
 
     ticker = df.attrs.get("ticker")
 
-    df = df.copy()
+    if len(df) < 100:
+        raise ValueError("Not enough data to create features")
 
-    if "close" in df.columns and "Close" not in df.columns:
-        df["Close"] = df["close"]
+    df["return"] = df["close"].pct_change()
 
-    if len(df) < 60:
-        return df
+    df["ma_10"] = df["close"].rolling(10).mean()
+    df["ma_50"] = df["close"].rolling(50).mean()
 
-    df["return"] = df["Close"].pct_change()
-
-    df["ma_10"] = df["Close"].rolling(10).mean()
-    df["ma_50"] = df["Close"].rolling(50).mean()
-
-    df["volatility"] = df["return"].rolling(10).std()
+    df["volatility"] = df["return"].rolling(20).std()
 
     df["target"] = df["return"].shift(-1)
 
@@ -39,7 +38,7 @@ def scale_split(df, seq_length=30):
     test_df = df.iloc[train_size:]
 
     feature_cols = [
-        "Close",
+        "close",
         "return",
         "ma_10",
         "ma_50",
@@ -64,7 +63,7 @@ def scale_split(df, seq_length=30):
         X_seq = []
         y_seq = []
 
-        for i in range(len(X) - seq_length - 1):
+        for i in range(len(X) - seq_length):
 
             X_seq.append(X[i:i + seq_length])
             y_seq.append(y[i + seq_length])
