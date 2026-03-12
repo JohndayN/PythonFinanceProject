@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import joblib
 import os
+from tqdm import tqdm
 
 from MarketPrediction.models.lstm import LSTMModel
 from MarketPrediction.services.feature_service import create_features, scale_split
@@ -55,11 +56,21 @@ def train_model(ticker):
     epochs = 30
     batch_size = 32
 
+    print(f"Training samples: {len(X_train)}")
+    print(f"Test samples: {len(X_test)}")
+    print(f"Features: {input_size}")
+
     for epoch in range(epochs):
 
         model.train()
 
-        for i in range(0, len(X_train), batch_size):
+        batch_iterator = tqdm(
+            range(0, len(X_train), batch_size),
+            desc=f"{ticker} Epoch {epoch+1}/{epochs}",
+            leave=False
+        )
+
+        for i in batch_iterator:
 
             xb = X_train[i:i+batch_size]
             yb = y_train[i:i+batch_size]
@@ -72,8 +83,10 @@ def train_model(ticker):
             loss.backward()
             optimizer.step()
 
-        if epoch % 5 == 0:
-            print(f"Epoch {epoch} Loss {loss.item():.6f}")
+            batch_iterator.set_postfix(loss=loss.item())
+
+        print(f"Epoch {epoch+1}/{epochs} Loss {loss.item():.6f}")
+
 
     # Evaluate
     model.eval()
@@ -98,5 +111,11 @@ if __name__ == "__main__":
 
     tickers = ["FPT", "VNM", "VCB"]
 
-    for t in tickers:
+    db = get_db_manager()
+    df = db.get_stock_df("FPT", limit=5)
+
+    print(df.columns)
+    print(df.head())
+    
+    for t in tqdm(tickers, desc="Training all tickers"):
         train_model(t)

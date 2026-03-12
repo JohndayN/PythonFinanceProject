@@ -10,6 +10,8 @@ import config
 import json
 from typing import Dict, Any, Optional
 import pandas as pd
+import ast
+import re
 
 class MongoDBManager:
     def __init__(self, uri: str = None, db_name: str = None, timeout: int = 5000):
@@ -404,30 +406,69 @@ class MongoDBManager:
         except Exception as e:
             print(f"Error fetching results from {collection_name}: {str(e)}")
             return []
-        
-    def get_stock_df(self, symbol: str, limit: 1096):
 
-        records = self.get_stock_from_ticker_db(symbol, limit)
+    def get_stock_df(self, symbol: str, limit: int = 1096):
 
-        if not records:
+        try:
+
+            ticker_db = self.client["ticker_db"]
+            collection = ticker_db["mixed_ticker_data"]
+
+            doc = collection.find_one({"symbol": symbol.upper()})
+
+            if not doc:
+                print(f"No document found for {symbol}")
+                return pd.DataFrame()
+
+            prices = doc.get("prices", [])
+
+            # If stored as string → repair it
+            if isinstance(prices, str):
+
+                fixed = prices
+
+                # remove Timestamp()
+                fixed = re.sub(r"Timestamp\('([^']+)'\)", r'"\1"', fixed)
+
+                # fix nan
+                fixed = fixed.replace("nan", "null")
+                fixed = fixed.replace("NaN", "null")
+                fixed = fixed.replace("None", "null")
+
+                # convert single quotes → json
+                fixed = fixed.replace("'", '"')
+
+                prices = json.loads(fixed)
+
+            if not prices:
+                print(f"No price data for {symbol}")
+                return pd.DataFrame()
+
+            prices = prices[-limit:]
+
+            df = pd.DataFrame(prices)
+
+            if df.empty:
+                return df
+
+            df.columns = [c.lower() for c in df.columns]
+
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date")
+                df = df.set_index("date")
+
+            if "close" in df.columns:
+                df["Close"] = df["close"]
+
+            df.attrs["ticker"] = symbol
+
+            return df
+
+        except Exception as e:
+            print(f"Error loading stock dataframe: {e}")
             return pd.DataFrame()
 
-        df = pd.DataFrame(records)
-
-        df.columns = [c.lower() for c in df.columns]
-
-        if "close" in df.columns:
-            df["Close"] = df["close"]
-
-        df["date"] = pd.to_datetime(df["date"])
-
-        df = df.sort_values("date")
-
-        df = df.set_index("date")
-
-        df.attrs["ticker"] = symbol
-
-        return df
 
     def get_latest_prediction(self, ticker: str):
         try:
@@ -473,3 +514,4 @@ def save_results(results: Dict[str, Any]) -> bool:
     except Exception as e:
         print(f"Error in save_results: {str(e)}")
         return False
+
