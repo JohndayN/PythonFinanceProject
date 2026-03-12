@@ -1,115 +1,316 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import { Pie } from "react-chartjs-2";
-import './Pages.css';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend} from 'chart.js';
+import "./Pages.css";
+import { Scatter } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  PointElement,
+  LineElement,
+  LinearScale,
+  Title
+} from "chart.js";
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(
+  ArcElement,
+  Tooltip,
+  Legend,
+  PointElement,
+  LineElement,
+  LinearScale,
+  Title
+);
 
 function PortfolioOptimizer() {
+
   const [availableTickers, setAvailableTickers] = useState([]);
-  useEffect(() => {
-    fetch("http://localhost:8000/api/data/available-tickers")
-      .then(res => res.json())
-      .then(data => setAvailableTickers(data.tickers || []))
-      .catch(() => setAvailableTickers(['FPT','HPG','VNM']));
-  }, []);
+  const [stocks, setStocks] = useState("FPT,HPG,VNM");
+
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [stocks, setStocks] = useState('FPT,HPG,VNM');
 
+  // ================= FETCH AVAILABLE TICKERS =================
+  useEffect(() => {
+
+    fetch("http://localhost:8000/api/data/available-tickers")
+      .then(res => res.json())
+      .then(data => {
+        setAvailableTickers(data.tickers || []);
+      })
+      .catch(() => {
+        setAvailableTickers(["FPT","HPG","VNM"]);
+      });
+
+  }, []);
+
+  // ================= OPTIMIZE =================
   const handleOptimize = async () => {
+
+    const stockList = stocks
+      .split(",")
+      .map(s => s.trim().toUpperCase())
+      .filter(Boolean);
+
+    if (stockList.length === 0) {
+      alert("Please enter at least 1 ticker.");
+      return;
+    }
+
     setLoading(true);
+    setResults(null);
+
     try {
-      const stockList = stocks.split(',').map(s => s.trim()).filter(s => s);
+
       const response = await fetch(
-        `http://localhost:8000/api/portfolio/optimize`,
-        { 
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          mode: 'cors', 
-          credentials: 'omit',
-          body: JSON.stringify({ tickers: stockList })
+        "http://localhost:8000/api/portfolio/optimize",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tickers: stockList
+          })
         }
       );
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Server error: ${response.status}`);
       }
+
       const data = await response.json();
+
       setResults(data);
+
     } catch (error) {
-      console.error('Error:', error);
-      alert('Failed to optimize portfolio: ' + error.message);
+
+      console.error(error);
+
+      alert("Portfolio optimization failed");
+
     } finally {
+
       setLoading(false);
+
     }
   };
 
+  // ================= PIE COLORS =================
+  const pieColors = [
+    "#4CAF50",
+    "#2196F3",
+    "#FFC107",
+    "#FF5722",
+    "#9C27B0",
+    "#00BCD4",
+    "#E91E63"
+  ];
+
+  // ================= PIE DATA =================
+  const pieData = results
+    ? {
+        labels: Object.keys(results.weights || {}),
+        datasets: [
+          {
+            data: Object.values(results.weights || {}),
+            backgroundColor: pieColors,
+            borderWidth: 1
+          }
+        ]
+      }
+    : null;
+
+  // ================= EFFICIENT FRONTIER DATA =================
+  const frontierData = results?.efficient_frontier
+    ? {
+        datasets: [
+          {
+            label: "Efficient Frontier",
+            data: results.efficient_frontier.map(p => ({
+              x: p.risk,
+              y: p.return
+            })),
+            borderColor: "#2196F3",
+            backgroundColor: "#2196F3",
+            showLine: true,
+            tension: 0.3
+          },
+          {
+            label: "Optimal Portfolio",
+            data: [{
+              x: results.volatility,
+              y: results.expected_return
+            }],
+            backgroundColor: "red",
+            pointRadius: 6
+          }
+        ]
+      }
+    : null;
+
+
+  // ================= FRONTIER OPTIONS =================
+  const frontierOptions = {
+    responsive: true,
+    plugins: {
+      legend: { position: "top" },
+      title: {
+        display: true,
+        text: "Efficient Frontier (Risk vs Return)"
+      }
+    },
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: "Risk (Volatility)"
+        }
+      },
+      y: {
+        title: {
+          display: true,
+          text: "Expected Return"
+        }
+      }
+    }
+  };
+
+
   return (
+
     <div className="page">
+
       <h1>Portfolio Optimizer</h1>
-      
+
       <div className="card">
+
         <h3>Optimize Your Portfolio</h3>
+
+        {/* ================= INPUT ================= */}
+
         <div className="form-group">
-          <label>Stocks (comma-separated):</label>
-          <input 
-            type="text" 
+
+          <label>Stocks (comma separated)</label>
+
+          <input
+            type="text"
             value={stocks}
             onChange={(e) => setStocks(e.target.value)}
-            placeholder="e.g., FPT,HPG,VNM"
+            placeholder="FPT,HPG,VNM"
           />
+
         </div>
-        <button 
+
+        {/* ================= BUTTON ================= */}
+
+        <button
           onClick={handleOptimize}
           disabled={loading}
         >
-          {loading ? 'Optimizing...' : 'Optimize Portfolio'}
+          {loading ? "Optimizing..." : "Optimize Portfolio"}
         </button>
 
+        {/* ================= RESULTS ================= */}
+
         {results && (
+
           <div className="results">
+
             <h4>Optimized Portfolio</h4>
 
             <table className="data-table">
+
               <thead>
                 <tr>
                   <th>Stock</th>
                   <th>Weight</th>
                 </tr>
               </thead>
+
               <tbody>
-                {Object.entries(results.weights || {}).map(([ticker, weight]) => (
+
+                {Object.entries(results.weights || {}).map(
+                  ([ticker, weight]) => (
+
                   <tr key={ticker}>
+
                     <td>{ticker}</td>
+
                     <td>{(weight * 100).toFixed(2)}%</td>
+
                   </tr>
+
                 ))}
+
               </tbody>
+
             </table>
 
+            {/* ================= METRICS ================= */}
+
             <div className="portfolio-metrics">
-              <p><strong>Expected Return:</strong> {(results.expected_return * 100).toFixed(2)}%</p>
-              <p><strong>Volatility:</strong> {(results.volatility * 100).toFixed(2)}%</p>
-              <p><strong>Sharpe Ratio:</strong> {results.sharpe_ratio?.toFixed(2)}</p>
+
+              <div className="metric-card">
+                <span className="metric-title">Expected Return</span>
+                <span className="metric-value">
+                  {(results.expected_return * 100).toFixed(2)}%
+                </span>
+              </div>
+
+              <div className="metric-card">
+                <span className="metric-title">Volatility</span>
+                <span className="metric-value">
+                  {(results.volatility * 100).toFixed(2)}%
+                </span>
+              </div>
+
+              <div className="metric-card">
+                <span className="metric-title">Sharpe Ratio</span>
+                <span className="metric-value">
+                  {results.sharpe_ratio?.toFixed(2)}
+                </span>
+              </div>
+
             </div>
+
+
+            {/* ================= PIE CHART ================= */}
+
+            {pieData && (
+
+              <div style={{ width: "400px", margin: "auto" }}>
+
+                <Pie data={pieData} />
+
+              </div>
+
+            )}
+
+            {/* ================= EFFICIENT FRONTIER ================= */}
+
+            {frontierData && (
+
+              <div style={{ width: "500px", margin: "40px auto" }}>
+
+                <Scatter
+                  data={frontierData}
+                  options={frontierOptions}
+                />
+
+              </div>
+
+            )}
+
           </div>
+
         )}
 
-        {results && (
-          <Pie
-            data={{
-              labels: Object.keys(results.weights || {}),
-              datasets: [
-                {
-                  data: Object.values(results.weights || {}),
-                },
-              ],
-            }}
-          />
-        )}
       </div>
+
     </div>
+
   );
+
 }
 
 export default PortfolioOptimizer;
