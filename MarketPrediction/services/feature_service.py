@@ -45,7 +45,7 @@ def create_features(df: pd.DataFrame):
 
     # Target
     df["target"] = df["return"].shift(-1)
-
+    df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna()
 
     print("Columns after feature creation:", df.columns.tolist())

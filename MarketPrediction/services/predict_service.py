@@ -75,11 +75,11 @@ def predict(df: pd.DataFrame, ticker: str, days: int = 5):
 
                 TRAINING_LOCK.add(ticker)
 
-                print(f"No model for {ticker}. Training...")
-
-                train_model(ticker)
-
-                TRAINING_LOCK.remove(ticker)
+                try:
+                    print(f"No model for {ticker}. Training...")
+                    train_model(ticker)
+                finally:
+                    TRAINING_LOCK.remove(ticker)
 
         if not os.path.exists(model_path) or not os.path.exists(scaler_path):
 
@@ -164,9 +164,9 @@ def predict(df: pd.DataFrame, ticker: str, days: int = 5):
             new_row = seq_np[-1].copy()
 
             # update lag features
-            new_row[0] = current_price
-            new_row[1] = seq_np[-1][0]
-            new_row[2] = seq_np[-1][1]
+            new_row[0] = current_price   # lag_1
+            new_row[1] = seq_np[-1][0]   # lag_3 shift
+            new_row[2] = seq_np[-1][1]   # lag_5 shift
 
             seq_np = np.vstack((seq_np[1:], new_row))
 

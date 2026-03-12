@@ -707,9 +707,6 @@ async def detect_fraud_comprehensive(file: UploadFile = File(...), ticker: str =
 
 @app.get("/api/prediction/forecast/{ticker}")
 async def predict_market(ticker: str, days: int = 5):
-    """
-    Predict market movement for a ticker
-    """
     try:
         df = await run_in_threadpool(
             get_market_data,
@@ -717,24 +714,37 @@ async def predict_market(ticker: str, days: int = 5):
             config.start_date,
             config.end_date
         )
-        
+
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
+
+        # Ensure datetime
+        if "time" in df.columns:
+            df["date"] = pd.to_datetime(df["time"])
+        elif "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+        else:
+            df["date"] = df.index
+
+        # Convert to JSON format for candlestick
+        historical = df.tail(120)[["date","open","high","low","close"]].copy()
+        historical["date"] = historical["date"].astype(str)
+
         predictions = predict(df, ticker, days)
+
         result = {
             "ticker": ticker.upper(),
+            "historical": historical.to_dict("records"),
             "predictions": predictions["prediction"],
             "upper": predictions["upper"],
             "lower": predictions["lower"],
             "confidence": 0.0
-            }
-        
-        # Save to MongoDB
+        }
+
         db_manager.save_market_prediction_result(ticker.upper(), days, result)
-        
+
         return result
-    except HTTPException:
-        raise
+
     except Exception as e:
         print(f"Error in market prediction: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
