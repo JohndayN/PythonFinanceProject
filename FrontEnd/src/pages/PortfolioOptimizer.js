@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Pie } from "react-chartjs-2";
+import { Pie, Scatter } from "react-chartjs-2";
 import "./Pages.css";
-import { Scatter } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   ArcElement,
@@ -27,7 +26,6 @@ function PortfolioOptimizer() {
 
   const [availableTickers, setAvailableTickers] = useState([]);
   const [stocks, setStocks] = useState("FPT,HPG,VNM");
-
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -79,13 +77,11 @@ function PortfolioOptimizer() {
       }
 
       const data = await response.json();
-
       setResults(data);
 
     } catch (error) {
 
       console.error(error);
-
       alert("Portfolio optimization failed");
 
     } finally {
@@ -120,10 +116,12 @@ function PortfolioOptimizer() {
       }
     : null;
 
-  // ================= EFFICIENT FRONTIER DATA =================
+  // ================= EFFICIENT FRONTIER + CONFIDENCE BAND =================
   const frontierData = results?.efficient_frontier
     ? {
         datasets: [
+
+          // Efficient Frontier
           {
             label: "Efficient Frontier",
             data: results.efficient_frontier.map(p => ({
@@ -133,8 +131,11 @@ function PortfolioOptimizer() {
             borderColor: "#2196F3",
             backgroundColor: "#2196F3",
             showLine: true,
-            tension: 0.3
+            tension: 0.3,
+            fill: false
           },
+
+          // Optimal Portfolio
           {
             label: "Optimal Portfolio",
             data: [{
@@ -143,11 +144,45 @@ function PortfolioOptimizer() {
             }],
             backgroundColor: "red",
             pointRadius: 6
+          },
+
+          // Upper Confidence Band
+          {
+            type: "line",
+            label: "Upper Confidence",
+            data: results.frontier_confidence_band
+              ? results.frontier_confidence_band.map(p => ({
+                  x: p.risk,
+                  y: p.upper
+                }))
+              : [],
+            borderColor: "rgba(0,200,83,0.5)",
+            backgroundColor: "rgba(0,200,83,0.2)",
+            showLine: true,
+            tension: 0.3,
+            pointRadius: 0
+          },
+
+          // Lower Confidence Band
+          {
+            type: "line",
+            label: "Lower Confidence",
+            data: results.frontier_confidence_band
+              ? results.frontier_confidence_band.map(p => ({
+                  x: p.risk,
+                  y: p.lower
+                }))
+              : [],
+            borderColor: "rgba(255,82,82,0.5)",
+            backgroundColor: "rgba(255,82,82,0.2)",
+            showLine: true,
+            tension: 0.3,
+            pointRadius: 0
           }
+
         ]
       }
     : null;
-
 
   // ================= FRONTIER OPTIONS =================
   const frontierOptions = {
@@ -156,11 +191,20 @@ function PortfolioOptimizer() {
       legend: { position: "top" },
       title: {
         display: true,
-        text: "Efficient Frontier (Risk vs Return)"
+        text: "Efficient Frontier with Confidence Band"
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return `Return: ${(context.raw.y * 100).toFixed(2)}% | Risk: ${(context.raw.x * 100).toFixed(2)}%`;
+          }
+        }
       }
     },
     scales: {
       x: {
+        type: "linear",
+        position: "bottom",
         title: {
           display: true,
           text: "Risk (Volatility)"
@@ -175,7 +219,6 @@ function PortfolioOptimizer() {
     }
   };
 
-
   return (
 
     <div className="page">
@@ -186,10 +229,7 @@ function PortfolioOptimizer() {
 
         <h3>Optimize Your Portfolio</h3>
 
-        {/* ================= INPUT ================= */}
-
         <div className="form-group">
-
           <label>Stocks (comma separated)</label>
 
           <input
@@ -198,10 +238,7 @@ function PortfolioOptimizer() {
             onChange={(e) => setStocks(e.target.value)}
             placeholder="FPT,HPG,VNM"
           />
-
         </div>
-
-        {/* ================= BUTTON ================= */}
 
         <button
           onClick={handleOptimize}
@@ -209,8 +246,6 @@ function PortfolioOptimizer() {
         >
           {loading ? "Optimizing..." : "Optimize Portfolio"}
         </button>
-
-        {/* ================= RESULTS ================= */}
 
         {results && (
 
@@ -233,11 +268,8 @@ function PortfolioOptimizer() {
                   ([ticker, weight]) => (
 
                   <tr key={ticker}>
-
                     <td>{ticker}</td>
-
                     <td>{(weight * 100).toFixed(2)}%</td>
-
                   </tr>
 
                 ))}
@@ -245,8 +277,6 @@ function PortfolioOptimizer() {
               </tbody>
 
             </table>
-
-            {/* ================= METRICS ================= */}
 
             <div className="portfolio-metrics">
 
@@ -273,32 +303,19 @@ function PortfolioOptimizer() {
 
             </div>
 
-
-            {/* ================= PIE CHART ================= */}
-
             {pieData && (
-
               <div style={{ width: "400px", margin: "auto" }}>
-
                 <Pie data={pieData} />
-
               </div>
-
             )}
 
-            {/* ================= EFFICIENT FRONTIER ================= */}
-
             {frontierData && (
-
-              <div style={{ width: "500px", margin: "40px auto" }}>
-
+              <div style={{ width: "550px", margin: "40px auto" }}>
                 <Scatter
                   data={frontierData}
                   options={frontierOptions}
                 />
-
               </div>
-
             )}
 
           </div>

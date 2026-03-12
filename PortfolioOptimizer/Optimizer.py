@@ -274,12 +274,17 @@ def calculate_portfolio_metrics(weights,
         sharpe_ratio = 0.0
     else:
         sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_risk
+        
+    annual_return = portfolio_return * 252
+    annual_vol = portfolio_risk * np.sqrt(252)
 
     return {
         "expected_return": float(portfolio_return),
-        "risk": float(portfolio_risk),
+        "volatility": float(portfolio_risk),
         "variance": float(portfolio_variance),
-        "sharpe_ratio": float(sharpe_ratio)
+        "sharpe_ratio": float(sharpe_ratio),
+        "annual_return": float(annual_return),
+        "annual_volatility": float(annual_vol)
     }
 
 
@@ -324,8 +329,8 @@ def generate_efficient_frontier(expected_returns,
     frontier = []
 
     target_returns = np.linspace(
-        np.min(expected_returns),
-        np.max(expected_returns),
+        np.min(expected_returns) * 0.5,
+        np.max(expected_returns) * 1.5,
         n_points
     )
 
@@ -369,7 +374,8 @@ def generate_efficient_frontier(expected_returns,
 
                 frontier.append({
                     "risk": float(port_vol),
-                    "return": float(port_return)
+                    "return": float(port_return),
+                    "weights": w.tolist()
                 })
 
         except Exception:
@@ -377,23 +383,52 @@ def generate_efficient_frontier(expected_returns,
 
     return frontier
 
-def compute_confidence_band(weights,
-                            expected_returns,
-                            cov_matrix,
-                            n_sim=1000):
+def compute_confidence_band(weights, expected_returns, cov_matrix, n_sim=1000):
 
-    expected_returns = _prepare_array(expected_returns)
-    cov_matrix = _prepare_array(cov_matrix)
+    simulations = []
+
+    daily_mean = expected_returns / 252
+    daily_cov = cov_matrix / 252
+
+    for _ in range(n_sim):
+
+        sim_returns = np.random.multivariate_normal(
+            daily_mean,
+            daily_cov
+        )
+
+        port_return = np.dot(weights, sim_returns) * 252
+
+        simulations.append(port_return)
+
+    lower = np.percentile(simulations, 5)
+    upper = np.percentile(simulations, 95)
+
+    return float(lower), float(upper)
+
+def compute_frontier_confidence_band(frontier, cov_matrix, expected_returns):
+
+    bands = []
 
     sims = np.random.multivariate_normal(
         expected_returns,
         cov_matrix,
-        size=n_sim
+        size=500
     )
 
-    portfolio_returns = sims @ weights
+    for point in frontier:
 
-    lower = np.percentile(portfolio_returns, 5)
-    upper = np.percentile(portfolio_returns, 95)
+        w = np.array(point["weights"])
 
-    return float(lower), float(upper)
+        portfolio_returns = sims @ w
+
+        lower = np.percentile(portfolio_returns, 5)
+        upper = np.percentile(portfolio_returns, 95)
+
+        bands.append({
+            "risk": point["risk"],
+            "lower": float(lower),
+            "upper": float(upper)
+        })
+
+    return bands

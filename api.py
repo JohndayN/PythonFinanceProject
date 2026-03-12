@@ -108,6 +108,11 @@ class PortfolioOptimizationRequest(BaseModel):
 class ConfidenceBand(BaseModel):
     lower: float
     upper: float
+    
+class FrontierBand(BaseModel):
+    risk: float
+    lower: float
+    upper: float
 class PortfolioOptimizationResponse(BaseModel):
     weights: Dict[str, float]
     expected_return: float
@@ -115,6 +120,7 @@ class PortfolioOptimizationResponse(BaseModel):
     sharpe_ratio: Optional[float] = None
     efficient_frontier: Optional[List[Dict]] = None
     confidence_band: Optional[ConfidenceBand] = None
+    frontier_confidence_band: Optional[List[FrontierBand]] = None
     status: str
 
 class FraudDetectionResponse(BaseModel):
@@ -531,11 +537,11 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
         # shape = (assets, time)
 
         # ================= EXPECTED RETURNS =================
-        expected_returns = np.nanmean(returns_array, axis=1)
+        expected_returns = np.nanmean(returns_array, axis=1) * 252
 
         expected_returns = np.nan_to_num(
             expected_returns,
-            nan=0.001,
+            nan=0.05,
             posinf=0.01,
             neginf=-0.01
         )
@@ -544,13 +550,13 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
 
         if len(valid_tickers) == 1:
 
-            var = np.var(returns_array[0])
+            var = np.var(returns_array[0]) * 252
 
             cov_matrix = np.array([[var if var > 0 else 1e-6]])
 
         else:
 
-            cov_matrix = np.cov(returns_array)
+            cov_matrix = np.cov(returns_array) * 252
 
             if cov_matrix.ndim == 1:
                 cov_matrix = np.diag(cov_matrix)
@@ -621,6 +627,13 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
             expected_returns,
             cov_matrix
         )
+        
+        # ================= FRONTIER BAND =================
+        frontier_band = compute_frontier_confidence_band(
+            frontier,
+            cov_matrix,
+            expected_returns
+        )
 
         result = {
             "weights": {
@@ -635,6 +648,8 @@ async def optimize_portfolio(request: PortfolioOptimizationRequest):
                 "lower": lower,
                 "upper": upper
             },
+            
+            "frontier_confidence_band": frontier_band,
 
             "status": "success"
         }
