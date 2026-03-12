@@ -44,8 +44,8 @@ function MarketPrediction() {
   // Convert predictions → chart format
   let chartData = [];
 
-  if (results && results.prediction) {
-    chartData = results.prediction.map((price, index) => ({
+  if (results && results.predictions) {
+    chartData = results.predictions.map((price, index) => ({
       day: index + 1,
       price: Number(price.toFixed(2))
     }));

@@ -24,7 +24,7 @@ class Attention(nn.Module):
 
 class LSTMModel(nn.Module):
 
-    def __init__(self, input_size=5, hidden_size=64, num_layers=2, dropout=0.2):
+    def __init__(self, input_size=9, hidden_size=64, num_layers=2, dropout=0.2):
         super().__init__()
 
         self.lstm = nn.LSTM(

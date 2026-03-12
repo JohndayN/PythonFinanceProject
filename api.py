@@ -723,7 +723,9 @@ async def predict_market(ticker: str, days: int = 5):
         predictions = predict(df, ticker, days)
         result = {
             "ticker": ticker.upper(),
-            "predictions": predictions,
+            "predictions": predictions["prediction"],
+            "upper": predictions["upper"],
+            "lower": predictions["lower"],
             "confidence": 0.0
             }
         

@@ -56,6 +56,11 @@ end_date = datetime.today()
 start_date = (end_date - timedelta(days = 365*2)).strftime("%Y-%m-%d")
 end_date = end_date.strftime("%Y-%m-%d")
 
+"""
+#Single stock try
+FPT = Vnstock().stock("FPT","KBS")
+print(FPT.quote.history(start=start_date,end=end_date,interval="1D"))
+"""
 market_df = build_vn_market(start_date, end_date)
 
 market_df["time"] = pd.to_datetime(market_df["time"])

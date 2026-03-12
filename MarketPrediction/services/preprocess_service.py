@@ -9,7 +9,17 @@ def split_data(df, train_ratio):
 
 def scale_data(train_df, test_df):
 
-    feature_cols = ["Close", "return", "ma_10", "ma_50", "volatility"]
+    feature_cols = [
+        "lag_1",
+        "lag_3",
+        "lag_5",
+        "ma_5",
+        "ma_10",
+        "ma_50",
+        "momentum",
+        "volatility",
+        "volume_change"
+    ]
 
     scaler = StandardScaler()
 

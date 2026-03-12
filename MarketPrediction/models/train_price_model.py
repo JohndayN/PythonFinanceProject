@@ -1,69 +1,97 @@
 import torch
 import torch.nn as nn
-import numpy as np
-import pandas as pd
 import joblib
 import os
 
 from MarketPrediction.models.lstm import LSTMModel
-from MarketPrediction.services.feature_service import create_features
+from MarketPrediction.services.feature_service import create_features, scale_split
 from Database.MongoDBManager import get_db_manager
-from MarketPrediction.services.feature_service import scale_split
+
+ARTIFACT_DIR = "MarketPrediction/models/artifacts"
+os.makedirs(ARTIFACT_DIR, exist_ok=True)
 
 
 def train_model(ticker):
 
-    print(f"Training model for {ticker}")
+    print(f"\nTraining model for {ticker}")
+
     db = get_db_manager()
     df = db.get_stock_df(ticker, limit=800)
 
+    if df is None or df.empty:
+        raise ValueError(f"No data found for {ticker}")
+
+    df.columns = [c.lower() for c in df.columns]
+
+    print("Columns from MongoDB:", df.columns.tolist())
+    print(df.head())
+
+    # Feature engineering
     df = create_features(df)
 
+    print("Columns after feature creation:", df.columns.tolist())
+
+    if len(df) < 100:
+        raise ValueError(f"Not enough data to train {ticker}")
+
+    # Split data
     X_train, y_train, X_test, y_test, scaler = scale_split(df)
-    
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = LSTMModel(input_size=5).to(device)
+    input_size = X_train.shape[2]
+
+    model = LSTMModel(input_size=input_size).to(device)
 
     criterion = nn.MSELoss()
-
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
     y_train = torch.tensor(y_train, dtype=torch.float32).to(device)
 
+    X_test = torch.tensor(X_test, dtype=torch.float32).to(device)
+    y_test = torch.tensor(y_test, dtype=torch.float32).to(device)
+
     epochs = 30
+    batch_size = 32
 
     for epoch in range(epochs):
 
         model.train()
 
-        optimizer.zero_grad()
+        for i in range(0, len(X_train), batch_size):
 
-        outputs = model(X_train)
+            xb = X_train[i:i+batch_size]
+            yb = y_train[i:i+batch_size]
 
-        loss = criterion(outputs.squeeze(), y_train)
+            outputs = model(xb)
 
-        loss.backward()
+            loss = criterion(outputs.squeeze(), yb)
 
-        optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
         if epoch % 5 == 0:
-            print(f"Epoch {epoch} Loss {loss.item():.4f}")
+            print(f"Epoch {epoch} Loss {loss.item():.6f}")
 
-    os.makedirs("MarketPrediction/models/artifacts", exist_ok=True)
+    # Evaluate
+    model.eval()
 
-    torch.save(
-        model.state_dict(),
-        f"MarketPrediction/models/artifacts/{ticker}_model.pth"
-    )
+    with torch.no_grad():
+        test_pred = model(X_test)
+        test_loss = criterion(test_pred.squeeze(), y_test)
 
-    joblib.dump(
-        scaler,
-        f"MarketPrediction/models/artifacts/{ticker}_scaler.pkl"
-    )
+    print(f"Final Test Loss: {test_loss.item():.6f}")
 
-    print("Model saved.")
+    # Save model
+    model_path = os.path.join(ARTIFACT_DIR, f"{ticker}_model.pth")
+    scaler_path = os.path.join(ARTIFACT_DIR, f"{ticker}_scaler.pkl")
+
+    torch.save(model.state_dict(), model_path)
+    joblib.dump(scaler, scaler_path)
+
+    print("Model saved:", model_path)
 
 
 if __name__ == "__main__":

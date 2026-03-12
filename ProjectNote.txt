@@ -26,5 +26,5 @@ Scrape => yfinance, vnstock, stooq, hose(risky), vietstock
 Database: MongoDB, csv folder
 multiple ticker => just 1 whole csv
 WebApp => streamlit, react, nodejs
-Vnstock have stock(source: VCI(Viet Capital Securities),TCBS(Techcom Securities),str input(not sure which work)), crypto(source: MSN(Masan Group)), fund(source: fmarket)
+Vnstock have stock(source: VCI(Viet Capital Securities), KBS, MSN, FMP), crypto(source: MSN(Masan Group)), fund(source: fmarket)
 the Webapp does not close correctly yet => go to netstat and delete active connections

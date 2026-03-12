@@ -3,9 +3,11 @@ import joblib
 import numpy as np
 import pandas as pd
 import os
-from typing import List, Dict
+
 from Database.MongoDBManager import get_db_manager
 from MarketPrediction.models.train_price_model import train_model
+from MarketPrediction.services.feature_service import create_features
+from MarketPrediction.models.lstm import LSTMModel
 
 MODEL_CACHE = {}
 SCALER_CACHE = {}
@@ -14,50 +16,80 @@ TRAINING_LOCK = set()
 ARTIFACT_DIR = "MarketPrediction/models/artifacts"
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 
-def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
+
+def predict(df: pd.DataFrame, ticker: str, days: int = 5):
+
     try:
-        if isinstance(ticker_data, str):
-            ticker = ticker_data
-            db = get_db_manager()
-            df = db.get_stock_df(ticker, limit=800)
-        else:
-            df = ticker_data
-            
-            if ticker is None:
-                raise ValueError("Ticker missing from dataframe. Pass ticker explicitly.")  
 
         if df is None or df.empty:
-            return [0.0] * days
-        
-        if len(df) < 100:
-            print(f"Data for {ticker} not enough to predict. changing to simple forecast")
+            raise ValueError("Dataframe empty")
+
+        df.columns = [c.lower() for c in df.columns]
+
+        # ----------------------------
+        # FEATURE SET
+        # ----------------------------
+
+        feature_cols = [
+            "lag_1",
+            "lag_3",
+            "lag_5",
+            "ma_5",
+            "ma_10",
+            "ma_50",
+            "momentum",
+            "volatility",
+            "volume_change"
+        ]
+
+        df = create_features(df)
+
+        seq_length = 30
+
+        if len(df) < seq_length:
             return generate_simple_forecast(df, days)
 
-        # get last price
-        if 'close' in df.columns:
-            last_price = float(df['close'].iloc[-1])
-        elif 'close' in df.columns:
-            last_price = float(df['close'].iloc[-1])
+        # ----------------------------
+        # LAST PRICE
+        # ----------------------------
+
+        if "close" in df.columns:
+            last_price = float(df["close"].iloc[-1])
         else:
             last_price = float(df.iloc[-1, 0])
+
+        # ----------------------------
+        # MODEL PATH
+        # ----------------------------
 
         model_path = os.path.join(ARTIFACT_DIR, f"{ticker}_model.pth")
         scaler_path = os.path.join(ARTIFACT_DIR, f"{ticker}_scaler.pkl")
 
-        if not os.path.exists(model_path) and ticker not in TRAINING_LOCK:
-            TRAINING_LOCK.add(ticker)
-            
-            print(f"No model for {ticker}. Training...")
+        # ----------------------------
+        # TRAIN MODEL IF MISSING
+        # ----------------------------
 
-            train_model(ticker)
-            
-            TRAINING_LOCK.remove(ticker)
+        if not os.path.exists(model_path):
 
-            if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-                print("Training failed, using fallback forecast.")
-                return generate_simple_forecast(df, days)
+            if ticker not in TRAINING_LOCK:
 
-        from MarketPrediction.models.lstm import LSTMModel
+                TRAINING_LOCK.add(ticker)
+
+                print(f"No model for {ticker}. Training...")
+
+                train_model(ticker)
+
+                TRAINING_LOCK.remove(ticker)
+
+        if not os.path.exists(model_path) or not os.path.exists(scaler_path):
+
+            print("Training failed, using fallback forecast.")
+
+            return generate_simple_forecast(df, days)
+
+        # ----------------------------
+        # LOAD MODEL FROM CACHE
+        # ----------------------------
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -65,8 +97,10 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
 
             scaler = joblib.load(scaler_path)
 
-            model = LSTMModel(input_size=5).to(device)
+            model = LSTMModel(input_size=len(feature_cols)).to(device)
+
             model.load_state_dict(torch.load(model_path, map_location=device))
+
             model.eval()
 
             MODEL_CACHE[ticker] = model
@@ -75,26 +109,9 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
         model = MODEL_CACHE[ticker]
         scaler = SCALER_CACHE[ticker]
 
-        seq_length = 30
-
-        feature_cols = [
-            "close",
-            "return",
-            "ma_10",
-            "ma_50",
-            "volatility"
-        ]
-
-        from MarketPrediction.services.feature_service import create_features
-
-        df.columns = [c.lower() for c in df.columns]
-
-        df = create_features(df)
-        
-        print("columns after feature creation:", df.columns.tolist())
-
-        if len(df) < seq_length:
-            return generate_simple_forecast(df, days)
+        # ----------------------------
+        # FEATURE CHECK
+        # ----------------------------
 
         missing = [c for c in feature_cols if c not in df.columns]
 
@@ -118,11 +135,15 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
         returns = df["close"].pct_change().dropna()
 
         volatility = returns.std()
-        
+
         if np.isnan(volatility):
             volatility = 0.01
-        
+
         seq_np = last_seq.cpu().numpy()[0]
+
+        # ----------------------------
+        # ROLLING FORECAST
+        # ----------------------------
 
         for _ in range(days):
 
@@ -136,19 +157,25 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
             predictions.append(float(current_price))
 
             band = current_price * volatility * 2
+
             upper_band.append(current_price + band)
             lower_band.append(current_price - band)
 
             new_row = seq_np[-1].copy()
 
-            # update return feature
+            # update lag features
             new_row[0] = current_price
-            new_row[1] = pred_return
+            new_row[1] = seq_np[-1][0]
+            new_row[2] = seq_np[-1][1]
 
             seq_np = np.vstack((seq_np[1:], new_row))
 
             last_seq = torch.tensor(seq_np, dtype=torch.float32).unsqueeze(0).to(device)
-            
+
+        # ----------------------------
+        # SAVE RESULT
+        # ----------------------------
+
         manager = get_db_manager()
 
         manager.save_market_prediction_result(
@@ -158,7 +185,7 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
                 "predictions": predictions,
                 "confidence": float(1 - volatility),
                 "status": "completed",
-                "model": "LSTM_Attention"
+                "model": "LSTM"
             }
         )
 
@@ -174,38 +201,54 @@ def predict(ticker_data, ticker: str = None, days: int = 5) -> List[float]:
 
         return generate_simple_forecast(df, days)
 
-def generate_simple_forecast(df: pd.DataFrame, days: int) -> List[float]:
+
+# ---------------------------------
+# SIMPLE FORECAST FALLBACK
+# ---------------------------------
+
+def generate_simple_forecast(df: pd.DataFrame, days: int):
+
     try:
+
         if df is None or df.empty:
-            return [0.0] * days
-        
-        # Get close prices
-        if 'close' in df.columns:
-            prices = df['close'].values
-        elif 'close' in df.columns:
-            prices = df['close'].values
+            return {
+                "prediction": [0.0] * days,
+                "upper": [0.0] * days,
+                "lower": [0.0] * days
+            }
+
+        if "close" in df.columns:
+            prices = df["close"].values
         else:
             prices = df.iloc[:, 0].values
-        
-        # calculate average daily return
+
         returns = np.diff(prices) / prices[:-1]
+
         avg_return = np.mean(returns) if len(returns) > 0 else 0.0
-        
-        # Generate forecast
+
         last_price = float(prices[-1])
+
         forecast = []
         current_price = last_price
-        
+
         for _ in range(days):
+
             current_price = current_price * (1 + avg_return)
+
             forecast.append(float(current_price))
-        
+
         return {
             "prediction": forecast,
             "upper": forecast,
             "lower": forecast
         }
-    
+
     except Exception as e:
+
         print(f"Forecast error: {str(e)}")
-        return [0.0] * days
+
+        return {
+            "prediction": [0.0] * days,
+            "upper": [0.0] * days,
+            "lower": [0.0] * days
+        }
