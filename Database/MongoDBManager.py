@@ -458,9 +458,6 @@ class MongoDBManager:
                 df = df.sort_values("date")
                 df = df.set_index("date")
 
-            if "close" in df.columns:
-                df["Close"] = df["close"]
-
             df.attrs["ticker"] = symbol
 
             return df

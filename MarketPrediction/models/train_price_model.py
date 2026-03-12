@@ -24,8 +24,12 @@ def train_model(ticker):
 
     df.columns = [c.lower() for c in df.columns]
 
+    # remove duplicate columns
+    df = df.loc[:, ~df.columns.duplicated()]
+
     print("Columns from MongoDB:", df.columns.tolist())
     print(df.head())
+
 
     # Feature engineering
     df = create_features(df)
