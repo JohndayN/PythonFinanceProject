@@ -30,58 +30,81 @@ def get_all_symbols() -> List[str]:
         print(f"Error fetching all symbols: {str(e)}")
         return []
 
-def get_market_data(ticker, start_date=None, end_date=None):
+def get_market_data(ticker, start_date=None, end_date=None, source=None):
 
     ticker = ticker.upper().strip()
-    
+
     if start_date is None:
         start_date = config.start_date
 
     if end_date is None:
         end_date = config.end_date
 
+    if source is None:
+        source = config.source
+
+    source = source.upper()
+
     start_date = normalize_date(start_date)
     end_date = normalize_date(end_date)
 
     # ---- Try VNSTOCK first ----
     try:
-        stock = Vnstock().stock(symbol=ticker)
-        df = stock.quote.history(start=start_date, end=end_date, interval="1d")
+
+        print(f"Fetching {ticker} from VNStock ({source})")
+
+        stock = Vnstock().stock(symbol=ticker, source=source)
+
+        df = stock.quote.history(
+            start=start_date,
+            end=end_date,
+            interval="1d"
+        )
 
         if df is None or df.empty:
-            print(f"No data returned for {ticker} with Vnstock")
+            print(f"No data returned for {ticker} with VNStock {source}")
             return None
-        
+
         df = normalize_columns(df)
-        
+
         if "time" in df.columns:
             df["time"] = pd.to_datetime(df["time"])
             df = df.set_index("time")
 
         df = df.sort_index()
-        
+
         df["symbol"] = ticker
-        df["return"] = df["close"].pct_change()
-        df["log_return"] = np.log(df["close"] / df["close"].shift(1))
-        
+
+        if "close" in df.columns:
+            df["return"] = df["close"].pct_change()
+            df["log_return"] = np.log(df["close"] / df["close"].shift(1))
+
         return df
-        
+
     except Exception as e:
-        print(f"Vnstock failed {ticker}: {e}")
+        print(f"VNStock failed {ticker} ({source}): {e}")
 
     # ---- Yahoo fallback ----
     try:
 
         yf_ticker = ticker + ".VN"
 
-        df = yf.download(yf_ticker, start=start_date, end=end_date, progress=False)
+        print(f"Fallback to Yahoo Finance: {yf_ticker}")
+
+        df = yf.download(
+            yf_ticker,
+            start=start_date,
+            end=end_date,
+            progress=False
+        )
 
         if df is not None and not df.empty:
+
             df = normalize_columns(df)
-            
+
             result = pd.DataFrame()
             result.index = df.index
-            
+
             result["close"] = df["close"]
             result["volume"] = df["volume"]
             result["symbol"] = ticker
@@ -92,10 +115,8 @@ def get_market_data(ticker, start_date=None, end_date=None):
             result = result.dropna(subset=["return"])
 
             return result
-        
-        if df is None or df.empty:
-            print(f"No data returned for {ticker} with YahooFinance")
-            return None
+
+        print(f"No data returned for {ticker} with YahooFinance")
 
     except Exception as e:
         print(f"Yahoo failed {ticker}: {e}")

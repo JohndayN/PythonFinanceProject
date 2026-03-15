@@ -6,6 +6,7 @@ import CandlestickChart from '../components/CandlestickChart';
 const MarketScraper = () => {
 	const [ticker, setTicker] = useState('VCB');
 	const [tickerInput, setTickerInput] = useState('VCB');
+	const [source, setSource] = useState('VCI');
 	const [filteredTickers, setFilteredTickers] = useState([]);
 	const [showSuggestions, setShowSuggestions] = useState(false);
 	const [startDate, setStartDate] = useState('2023-01-01');
@@ -397,6 +398,16 @@ const MarketScraper = () => {
 									</ul>
 								)}
 							</div>
+							<label htmlFor="source">Data Source</label>
+								<select
+									id="source"
+									value={source}
+									onChange={(e) => setSource(e.target.value)}
+									className="form-input"
+								>
+									<option value="VCI">VCI</option>
+									<option value="KBS">KBS</option>
+								</select>
 						</div>
 
 						<div className="form-row">

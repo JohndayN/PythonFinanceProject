@@ -84,6 +84,7 @@ app.add_middleware(
 
 class MarketDataRequest(BaseModel):
     ticker: str
+    source: Optional[str] = "VCI"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
@@ -94,12 +95,14 @@ class MarketDataResponse(BaseModel):
 
 class AnomalyDetectionResponse(BaseModel):
     ticker: str
+    source: Optional[str] = "VCI"
     anomaly_score: float
     anomalies: List[Dict]
     status: str
 
 class PortfolioOptimizationRequest(BaseModel):
     tickers: List[str]
+    source: Optional[str] = "VCI"
     risk_aversion: float = 0.6
     fraud_penalty: float = 0.8
     start_date: Optional[str] = None
@@ -153,6 +156,71 @@ async def api_health_check():
         "version": "1.0.0"
     }
 
+# ===================== SOURCE =====================
+
+def normalize_source(source: Optional[str]) -> str:
+    """Normalize and validate data source"""
+    if not source:
+        return config.source
+
+    source = source.upper()
+
+    if source not in ["VCI", "KBS"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid source. Allowed sources: VCI, KBS"
+        )
+
+    return source
+
+
+async def get_cached_market_data(ticker, start_date, end_date, source):
+    """Fetch market data with caching and fallback"""
+
+    cache_key = f"{ticker}_{source}_{start_date}_{end_date}"
+    now = datetime.now()
+
+    # ================= CACHE HIT =================
+    if cache_key in market_cache:
+        cached = market_cache[cache_key]
+
+        if (now - cached["time"]).seconds < CACHE_TTL:
+            print(f"Cache hit: {ticker}")
+            return cached["data"]
+
+    # ================= FETCH DATA =================
+    try:
+        df = await run_in_threadpool(
+            get_market_data,
+            ticker,
+            start_date,
+            end_date,
+            source
+        )
+
+    except Exception as e:
+
+        print(f"{source} failed for {ticker}, trying fallback")
+
+        # fallback source
+        fallback = "KBS" if source == "VCI" else "VCI"
+
+        df = await run_in_threadpool(
+            get_market_data,
+            ticker,
+            start_date,
+            end_date,
+            fallback
+        )
+
+    # ================= SAVE CACHE =================
+    market_cache[cache_key] = {
+        "data": df,
+        "time": now
+    }
+
+    return df
+
 # ===================== SCRAPER ENDPOINTS =====================
 
 @app.post("/api/scraper/market-data", response_model=MarketDataResponse)
@@ -164,11 +232,13 @@ async def fetch_market_data(request: MarketDataRequest):
         start_date = request.start_date or config.start_date
         end_date = request.end_date or config.end_date
 
-        df = await run_in_threadpool(
-            get_market_data,
+        source = normalize_source(request.source)
+
+        df = await get_cached_market_data(
             request.ticker,
             start_date,
-            end_date
+            end_date,
+            source
         )
         
         # ================= FIX TIME COLUMN =================
@@ -329,12 +399,13 @@ async def detect_anomalies(request: MarketDataRequest):
         start_date = request.start_date or config.start_date
         end_date = request.end_date or config.end_date
         
-        # Get market data
-        df = await run_in_threadpool(
-            get_market_data,
+        source = normalize_source(request.source)
+
+        df = await get_cached_market_data(
             request.ticker,
             start_date,
-            end_date
+            end_date,
+            source
         )
         
         if df is None or df.empty:
@@ -437,12 +508,14 @@ async def process_ticker(ticker: str, request):
         # ================= API FALLBACK =================
         if df is None or df.empty:
 
+            source = normalize_source(request.source)
+
             df = await asyncio.wait_for(
-                run_in_threadpool(
-                    get_market_data,
+                get_cached_market_data(
                     ticker_upper,
                     request.start_date or config.start_date,
-                    request.end_date or config.end_date
+                    request.end_date or config.end_date,
+                    source
                 ),
                 timeout=10
             )
@@ -842,11 +915,11 @@ async def detect_fraud_comprehensive(file: UploadFile = File(...), ticker: str =
 @app.get("/api/prediction/forecast/{ticker}")
 async def predict_market(ticker: str, days: int = 5):
     try:
-        df = await run_in_threadpool(
-            get_market_data,
+        df = await get_cached_market_data(
             ticker,
             config.start_date,
-            config.end_date
+            config.end_date,
+            config.source
         )
 
         if df is None or df.empty:
