@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from fastapi.responses import JSONResponse
 
 # --- Data Modules ---
-from Scraper.GetMarketData import get_market_data
+from Scraper.GetMarketData import get_market_data, get_all_symbols
 from Scraper.HOSE.Liveboard import get_market_data as get_hose_market_data
 
 # --- Feature Engineering ---
@@ -383,6 +383,56 @@ async def fetch_company_news(ticker: str, days: int = 30):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching news: {str(e)}")
+
+# ===================== GET ALL STOCK =====================
+
+@app.get("/api/scraper/all-tickers")
+async def fetch_all_ticker_data(source: str = "VCI"):
+    """
+    Fetch latest market data for all tickers
+    """
+
+    try:
+        tickers = get_all_symbols()
+
+        if not tickers:
+            raise HTTPException(status_code=404, detail="No tickers found")
+
+        results = []
+
+        for ticker in tickers: 
+            try:
+                df = await run_in_threadpool(
+                    get_market_data,
+                    ticker,
+                    config.start_date,
+                    config.end_date,
+                    source
+                )
+
+                if df is None or df.empty:
+                    continue
+
+                last = df.iloc[-1]
+
+                results.append({
+                    "ticker": ticker,
+                    "close": float(last.get("close", 0)),
+                    "volume": float(last.get("volume", 0)),
+                    "return": float(last.get("return", 0))
+                })
+
+            except Exception as e:
+                print(f"Failed {ticker}: {e}")
+
+        return {
+            "count": len(results),
+            "data": results,
+            "status": "success"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===================== ANOMALY DETECTION ENDPOINTS =====================
 

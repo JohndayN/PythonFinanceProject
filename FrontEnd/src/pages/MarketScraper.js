@@ -91,6 +91,37 @@ const MarketScraper = () => {
 		setShowSuggestions(false);
 	};
 
+	const fetchAllTickers = async () => {
+
+    setLoading(true)
+    setError(null)
+
+    try {
+
+        const response = await fetch(
+            `http://localhost:8000/api/scraper/all-tickers?source=${source}`
+        )
+
+        if (!response.ok) {
+            throw new Error("Failed to fetch tickers")
+        }
+
+        const result = await response.json()
+
+        setHoseData({
+            data: result.data
+        })
+
+    } catch (err) {
+
+        console.error(err)
+        setError("Failed to load all ticker data")
+
+    } finally {
+        setLoading(false)
+    }
+}
+
 	const fetchMarketData = async (e) => {
 		e.preventDefault();
 		setLoading(true);
@@ -120,6 +151,7 @@ const MarketScraper = () => {
 					ticker: tickerInput.toUpperCase(),
 					start_date: startDate,
 					end_date: endDate,
+					source: source
 				}),
 			});
 
