@@ -3,12 +3,29 @@ import Plot from "react-plotly.js";
 
 function CandlestickChart({ data = [], predictions = []}) {
 
-  if (!data || data.length === 0) {
+  if (!data || (Array.isArray(data) && data.length === 0) || (data?.dates && data.dates.length === 0)) {
     return <p>No historical data available</p>;
   }
 
+  let formattedData = [];
+
+  if (Array.isArray(data)) {
+    // format: [{date, open, high, low, close}]
+    formattedData = data;
+  } else if (data?.dates) {
+    // format: {dates:[], open:[], high:[], low:[], close:[]}
+    formattedData = data.dates.map((date, i) => ({
+      date: date,
+      open: data.open?.[i],
+      high: data.high?.[i],
+      low: data.low?.[i],
+      close: data.close?.[i],
+      volume: data.volume?.[i]
+    }));
+  }
+
   // remove rows with missing OHLC
-  const cleanData = data.filter(
+  const cleanData = formattedData.filter(
     d => d.open != null && d.high != null && d.low != null && d.close != null
   );
 

@@ -170,6 +170,15 @@ async def fetch_market_data(request: MarketDataRequest):
             start_date,
             end_date
         )
+        
+        # ================= FIX TIME COLUMN =================
+        if df.index.name == "time":
+            df = df.reset_index()
+
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"])
+
+        df = df.reset_index(drop=True)
 
         if df is None or df.empty:
             raise HTTPException(
@@ -207,9 +216,9 @@ async def fetch_market_data(request: MarketDataRequest):
                 break
 
         if date_col:
-            dates = pd.to_datetime(df[date_col]).dt.strftime("%Y-%m-%d").tolist()
+            date = pd.to_datetime(df[date_col]).dt.strftime("%Y-%m-%d").tolist()
         else:
-            dates = df.index.astype(str).tolist()
+            date = df.index.astype(str).tolist()
 
         close_prices = df["close"].tolist() if "close" in df.columns else []
         volumes = df["volume"].tolist() if "volume" in df.columns else []
@@ -217,9 +226,12 @@ async def fetch_market_data(request: MarketDataRequest):
         return MarketDataResponse(
             ticker=ticker,
             data={
-                "close": close_prices,
-                "volume": volumes,
-                "dates": dates
+                "dates": date,
+                "open": df["open"].tolist(),
+                "high": df["high"].tolist(),
+                "low": df["low"].tolist(),
+                "close": df["close"].tolist(),
+                "volume": df["volume"].tolist()
             },
             status="success"
         )
