@@ -105,5 +105,5 @@ def get_listing_data(source):
     df.columns = [c.lower() for c in df.columns]
 
     return df
-
-print(get_listing_data("KBS"))
+stock = Vnstock().stock(symbol="VCB",source="VCI")
+print(stock.quote.history(start=start_date,end=end_date,interval="1D"))

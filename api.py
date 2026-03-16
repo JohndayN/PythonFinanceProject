@@ -240,6 +240,8 @@ async def get_cached_market_data(ticker, start_date, end_date, source):
         for k in oldest:
             market_cache.pop(k, None)
         return df
+    
+    return df
 
 # ===================== SCRAPER ENDPOINTS =====================
 

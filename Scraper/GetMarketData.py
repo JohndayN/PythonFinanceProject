@@ -16,12 +16,15 @@ sys.stderr.reconfigure(encoding='utf-8')
 # MongoDB setup
 # -----------------------------
 
-client = MongoClient(config.mongo_uri)
-db = client[config.mongo_db]
+client = MongoClient(config.MONGO_URI)
+db = client[config.DB_NAME]
 
 collection = db["mixed_ticker_data"]
 
-collection.create_index("symbol", unique=True)
+indexes = collection.index_information()
+
+if "symbol_1" not in indexes:
+    collection.create_index([("symbol", 1)], unique=True)
 
 
 # -----------------------------
@@ -314,6 +317,8 @@ if __name__ == "__main__":
     if df is not None:
 
         prices = build_price_list(df)
+        
+        print(prices)
 
         save_to_mongo(
             "VCB",

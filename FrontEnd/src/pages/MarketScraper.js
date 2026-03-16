@@ -91,6 +91,25 @@ const MarketScraper = () => {
 		setShowSuggestions(false);
 	};
 
+	const removeDuplicates = (data) => {
+		if (!Array.isArray(data)) return [];
+
+		const seen = new Set();
+
+		return data.filter((item) => {
+			const key = item.ticker || item.Symbol || item.symbol;
+
+			if (!key) return false;
+
+			if (seen.has(key)) {
+				return false;
+			}
+
+			seen.add(key);
+			return true;
+		});
+	};
+
 	const fetchAllTickers = async () => {
 
 		setLoading(true)
@@ -108,12 +127,14 @@ const MarketScraper = () => {
 
 				const dbResult = await dbResponse.json()
 
-				if (dbResult.data && dbResult.data.length > 0) {
+				if (result.data || [] && result.data || [].length > 0) {
 
 					console.log("Loaded tickers from MongoDB snapshot")
 
+					const cleaned = removeDuplicates(result.data || []);
+
 					setHoseData({
-						data: dbResult.data
+						data: cleaned
 					})
 
 					setLoading(false)
@@ -134,8 +155,10 @@ const MarketScraper = () => {
 
 			const result = await response.json()
 
+			const cleaned = removeDuplicates(result.data || []);
+
 			setHoseData({
-				data: result.data || []
+				data: cleaned
 			})
 
 		} catch (err) {
@@ -845,14 +868,32 @@ const MarketScraper = () => {
 
 							<tbody>
 
-							{hoseData.data.map((stock, i) => (
+							{hoseData.data?.map((stock, i) => (
 
 								<tr key={i}>
-								<td><strong>{stock.ticker}</strong></td>
-								<td>{stock.company_name || "N/A"}</td>
-								<td>{stock.close?.toFixed(2)}</td>
-								<td>{stock.volume?.toLocaleString()}</td>
-								<td>{stock.return !== undefined ? (stock.return * 100).toFixed(2) + "%" : "0.00%"}</td>
+									<td><strong>{stock.ticker || stock.symbol || "N/A"}</strong></td>
+
+									<td>
+									{stock.company_name || stock.organ_name || stock.name || "N/A"}
+									</td>
+
+									<td>
+									{typeof stock.close === "number"
+									? stock.close.toFixed(2)
+									: "N/A"}
+									</td>
+
+									<td>
+									{stock.volume
+									? stock.volume.toLocaleString()
+									: "0"}
+									</td>
+
+									<td>
+									{stock.return !== undefined
+									? (stock.return * 100).toFixed(2) + "%"
+									: "0.00%"}
+									</td>
 								</tr>
 
 							))}
