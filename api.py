@@ -37,6 +37,20 @@ from FraudDetection.fraud_detection_pdf import detect_fraud_pdf, detect_comprehe
 # --- LSTM ---
 from MarketPrediction.services.predict_service import predict
 
+# === REMOVE DUPE ===
+def remove_duplicate_prices(prices):
+    """Remove duplicate price entries by date"""
+    seen = set()
+    unique = []
+
+    for p in prices:
+        d = str(p.get("date"))
+        if d not in seen:
+            unique.append(p)
+            seen.add(d)
+
+    return unique
+
 # Initialize database manager
 db_manager = get_db_manager()
 
@@ -49,6 +63,7 @@ app = FastAPI(
 
 market_cache = {}
 CACHE_TTL = 60   # seconds
+MAX_CACHE_ITEMS = 200
 
 #Handle error
 @app.exception_handler(HTTPException)
@@ -218,8 +233,13 @@ async def get_cached_market_data(ticker, start_date, end_date, source):
         "data": df,
         "time": now
     }
-
-    return df
+    
+    # prevent memory explosion
+    if len(market_cache) > MAX_CACHE_ITEMS:
+        oldest = list(market_cache.keys())[:50]
+        for k in oldest:
+            market_cache.pop(k, None)
+        return df
 
 # ===================== SCRAPER ENDPOINTS =====================
 
@@ -264,15 +284,48 @@ async def fetch_market_data(request: MarketDataRequest):
         try:
             db = db_manager.db
 
-            doc = df_to_mongo_docs(df, ticker)
+            prices = df.apply(
+                lambda r: {
+                    "date": str(r.get("time")),
+                    "open": float(r.get("open", 0)),
+                    "high": float(r.get("high", 0)),
+                    "low": float(r.get("low", 0)),
+                    "close": float(r.get("close", 0)),
+                    "volume": float(r.get("volume", 0)),
+                    "return": float(r.get("return", 0)),
+                    "log_return": float(r.get("log_return", 0))
+                },
+                axis=1
+            ).tolist()
+
+            # remove duplicates
+            prices = remove_duplicate_prices(prices)
+
+            # prevent huge Mongo documents
+            prices = prices[-5000:]
+
+            doc = {
+                "symbol": ticker,
+                "source": source,
+                "updated_at": datetime.utcnow(),
+                "prices": prices
+            }
 
             db["mixed_ticker_data"].update_one(
                 {"symbol": ticker},
-                {"$set": doc},
+                {
+                    "$set": {
+                        "source": source,
+                        "updated_at": datetime.utcnow()
+                    },
+                    "$push": {
+                        "prices": {
+                            "$each": prices
+                        }
+                    }
+                },
                 upsert=True
             )
-
-            print(f"{ticker} saved to MongoDB")
 
         except Exception as db_err:
             print("MongoDB save failed:", db_err)
@@ -421,7 +474,7 @@ async def fetch_all_ticker_data(source: str = "VCI"):
                     "volume": float(last.get("volume", 0)),
                     "return": float(last.get("return", 0))
                 })
-
+                await asyncio.sleep(3)
             except Exception as e:
                 print(f"Failed {ticker}: {e}")
 
@@ -433,6 +486,102 @@ async def fetch_all_ticker_data(source: str = "VCI"):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# ===================== GET ALL STOCK FROM MONGO =====================    
+
+@app.get("/api/scraper/all-tickers-db")
+async def get_all_tickers_from_db(source: str = "VCI"):
+
+    try:
+
+        db = db_manager.db
+
+        docs = list(
+            db["mixed_ticker_data"].find(
+                {},
+                {
+                    "symbol": 1,
+                    "company_name": 1,
+                    "prices": {"$slice": -1},
+                    "_id": 0
+                }
+            )
+        )
+
+        results = []
+
+        for doc in docs:
+
+            ticker = doc.get("symbol")
+            company = doc.get("company_name")
+
+            prices = doc.get("prices", [])
+
+            if not prices:
+                continue
+
+            last = prices[-1]
+
+            results.append({
+                "ticker": ticker,
+                "company_name": company,
+                "close": float(last.get("close", 0)),
+                "volume": float(last.get("volume", 0)),
+                "return": float(last.get("return", 0))
+            })
+
+        return {
+            "count": len(results),
+            "data": results,
+            "source": source,
+            "status": "success"
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@app.get("/api/market/snapshot")
+async def market_snapshot():
+
+    db = db_manager.db
+
+    cursor = db["mixed_ticker_data"].find(
+        {},
+        {
+            "symbol":1,
+            "company_name":1,
+            "prices":{"$slice":-1},
+            "_id":0
+        }
+    )
+
+    docs = await run_in_threadpool(list, cursor)
+
+    results = []
+
+    for doc in docs:
+
+        prices = doc.get("prices", [])
+
+        if not prices:
+            continue
+
+        p = prices[-1]
+
+        results.append({
+            "symbol": doc["symbol"],
+            "company_name": doc.get("company_name"),
+            "close": p.get("close"),
+            "volume": p.get("volume"),
+            "return": p.get("return"),
+            "date": p.get("date")
+        })
+
+    return {"data": results}
 
 # ===================== ANOMALY DETECTION ENDPOINTS =====================
 
@@ -484,7 +633,7 @@ async def detect_anomalies(request: MarketDataRequest):
         # Find anomalous points
         anomalies = []
         if isinstance(anomaly_score, (np.ndarray, list)):
-            threshold = np.percentile(anomaly_score, 95)
+            threshold = np.quantile(anomaly_score, 0.95)
             anomaly_indices = np.where(np.array(anomaly_score) > threshold)[0]
             anomalies = [{"date": str(df.index[i] if hasattr(df, 'index') else i), 
                         "score": float(anomaly_score[i])} 
@@ -537,10 +686,13 @@ async def process_ticker(ticker: str, request):
         # ================= MongoDB =================
         try:
             db = db_manager.db
-            ticker_data = db['mixed_ticker_data'].find_one({'symbol': ticker_upper})
+            ticker_data = db['mixed_ticker_data'].find_one(
+                {'symbol': ticker_upper},
+                {"symbol":1, "company_name":1, "prices":1}
+            )
 
-            if ticker_data and 'daily_data' in ticker_data:
-                daily_list = ticker_data['daily_data']
+            if ticker_data and 'prices' in ticker_data:
+                daily_list = ticker_data['prices']
 
                 if daily_list:
                     df = pd.DataFrame(daily_list)
@@ -985,7 +1137,7 @@ async def predict_market(ticker: str, days: int = 5):
 
         # Convert to JSON format for candlestick
         historical = df.tail(120)[["date","open","high","low","close"]].copy()
-        historical["date"] = historical["date"].astype(str)
+        historical["date"] = pd.to_datetime(historical["date"]).dt.strftime("%Y-%m-%d")
 
         predictions = predict(df, ticker, days)
 

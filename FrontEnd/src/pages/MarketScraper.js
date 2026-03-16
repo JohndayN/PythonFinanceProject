@@ -93,34 +93,62 @@ const MarketScraper = () => {
 
 	const fetchAllTickers = async () => {
 
-    setLoading(true)
-    setError(null)
+		setLoading(true)
+		setError(null)
+		setHoseData(null)
 
-    try {
+		try {
 
-        const response = await fetch(
-            `http://localhost:8000/api/scraper/all-tickers?source=${source}`
-        )
+			// Try MongoDB snapshot first
+			const dbResponse = await fetch(
+				`http://localhost:8000/api/scraper/all-tickers-db?source=${source}`
+			)
 
-        if (!response.ok) {
-            throw new Error("Failed to fetch tickers")
-        }
+			if (dbResponse.ok) {
 
-        const result = await response.json()
+				const dbResult = await dbResponse.json()
 
-        setHoseData({
-            data: result.data
-        })
+				if (dbResult.data && dbResult.data.length > 0) {
 
-    } catch (err) {
+					console.log("Loaded tickers from MongoDB snapshot")
 
-        console.error(err)
-        setError("Failed to load all ticker data")
+					setHoseData({
+						data: dbResult.data
+					})
 
-    } finally {
-        setLoading(false)
-    }
-}
+					setLoading(false)
+					return
+				}
+			}
+
+			console.log("Mongo empty → scraping API")
+
+			// Fallback to scraping
+			const response = await fetch(
+				`http://localhost:8000/api/scraper/all-tickers?source=${source}`
+			)
+
+			if (!response.ok) {
+				throw new Error("Failed to fetch tickers")
+			}
+
+			const result = await response.json()
+
+			setHoseData({
+				data: result.data || []
+			})
+
+		} catch (err) {
+
+			console.error(err)
+			setError("Failed to load VN ticker data")
+
+		} finally {
+
+			setLoading(false)
+
+		}
+	}
 
 	const fetchMarketData = async (e) => {
 		e.preventDefault();
@@ -168,7 +196,7 @@ const MarketScraper = () => {
 			const result = await response.json();
 			
 			// Check if data is empty
-			if (!result.data || (result.data.length === 0)) {
+			if (!result.data || !result.data.dates || result.data.dates.length === 0) {
 				setError(`No data available for ${tickerInput} in the selected date range. Try a different date range or stock.`);
 				return;
 			}
@@ -379,24 +407,35 @@ const MarketScraper = () => {
 	return (
 		<div className="page-container">
 			<div className="scraper-tabs">
+
 				<button
-					className={`tab-button ${activeTab === 'single' ? 'active' : ''}`}
-					onClick={() => setActiveTab('single')}
+				className={`tab-button ${activeTab === 'single' ? 'active' : ''}`}
+				onClick={() => setActiveTab('single')}
 				>
-					Single Stock
+				Single Stock
 				</button>
+
 				<button
-					className={`tab-button ${activeTab === 'hose' ? 'active' : ''}`}
-					onClick={() => setActiveTab('hose')}
+				className={`tab-button ${activeTab === 'hose' ? 'active' : ''}`}
+				onClick={() => setActiveTab('hose')}
 				>
-					HOSE Market
+				HOSE Market
 				</button>
-			<button
+
+				<button
+				className={`tab-button ${activeTab === 'all' ? 'active' : ''}`}
+				onClick={() => setActiveTab('all')}
+				>
+				All Tickers
+				</button>
+
+				<button
 				className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
 				onClick={() => setActiveTab('news')}
-			>
+				>
 				Company News
-			</button>
+				</button>
+
 		</div>
 
 		{activeTab === 'single' && (
@@ -572,22 +611,43 @@ const MarketScraper = () => {
 
 						<div className="data-table-container">
 						<table className="data-table">
+
 							<thead>
-							<tr>
-								<th>Date</th>
-								<th>Close Price</th>
-								<th>Volume</th>
-							</tr>
-							</thead>
-							<tbody>
-							{data.data.dates?.map((date, index) => (
-								<tr key={index}>
-								<td>{date}</td>
-								<td>{data.data.close?.[index]?.toFixed(2)}</td>
-								<td>{data.data.volume?.[index]?.toLocaleString()}</td>
+								<tr>
+									<th>Ticker</th>
+									<th>Close</th>
+									<th>Volume</th>
+									<th>Return</th>
 								</tr>
+							</thead>
+
+							<tbody>
+
+							{data.data.dates.map((date, i) => (
+
+								<tr key={i}>
+									<td><strong>{tickerInput}</strong></td>
+
+									<td>
+									{data.data.close?.[i]?.toFixed(2) || "0.00"}
+									</td>
+
+									<td>
+									{data.data.volume?.[i]?.toLocaleString() || "0"}
+									</td>
+
+									<td>
+									{i > 0
+									? (((data.data.close[i] - data.data.close[i-1]) / data.data.close[i-1]) * 100).toFixed(2) + "%"
+									: "-"}
+									</td>
+
+								</tr>
+
 							))}
+
 							</tbody>
+
 						</table>
 						</div>
 
@@ -729,6 +789,86 @@ const MarketScraper = () => {
 					)}
 				</div>
 			)}
+
+			{activeTab === 'all' && (
+				<div className="scraper-content">
+
+					<div className="form-card">
+					<h2>Vietnam Market</h2>
+					<p>Load all VN stock tickers</p>
+					<div className="form-group">
+					<label>Data Source</label>
+
+					<select
+					value={source}
+					onChange={(e) => setSource(e.target.value)}
+					className="form-input"
+					>
+
+					<option value="VCI">VCI</option>
+					<option value="KBS">KBS</option>
+
+					</select>
+					</div>
+					<button
+						onClick={fetchAllTickers}
+						disabled={loading}
+						className="submit-button"
+					>
+						{loading ? "Fetching..." : "Load All VN Tickers"}
+					</button>
+
+					</div>
+
+					{hoseData && (
+
+					<div className="results-card">
+
+						<div className="results-header">
+						<h2>All Vietnamese Stocks</h2>
+						<span>{hoseData.data?.length} stocks</span>
+						</div>
+
+						<div className="data-table-container">
+
+						<table className="data-table">
+
+							<thead>
+							<tr>
+								<th>Ticker</th>
+								<th>Company</th>
+								<th>Close</th>
+								<th>Volume</th>
+								<th>Return</th>
+							</tr>
+							</thead>
+
+							<tbody>
+
+							{hoseData.data.map((stock, i) => (
+
+								<tr key={i}>
+								<td><strong>{stock.ticker}</strong></td>
+								<td>{stock.company_name || "N/A"}</td>
+								<td>{stock.close?.toFixed(2)}</td>
+								<td>{stock.volume?.toLocaleString()}</td>
+								<td>{stock.return !== undefined ? (stock.return * 100).toFixed(2) + "%" : "0.00%"}</td>
+								</tr>
+
+							))}
+
+							</tbody>
+
+						</table>
+
+						</div>
+
+					</div>
+
+					)}
+
+				</div>
+				)}
 
 			{activeTab === 'news' && (
 				<div className="scraper-content">

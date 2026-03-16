@@ -114,7 +114,7 @@ class MongoDBManager:
             collection = self.db["anomaly_detection_results"]
             document = {
                 "timestamp": datetime.datetime.utcnow(),
-                "ticker": ticker,
+                "ticker": ticker.upper(),
                 "anomaly_score": float(result.get("anomaly_score", 0)),
                 "anomalies": result.get("anomalies", []),
                 "status": result.get("status", "completed")
@@ -258,9 +258,10 @@ class MongoDBManager:
             # Mixed ticker data indexes (ticker_db)
             try:
                 ticker_db = self.client["ticker_db"]
-                ticker_db["mixed_ticker_data"].create_index([("symbol", 1), ("time", -1)])
-                ticker_db["mixed_ticker_data"].create_index("symbol")
-                ticker_db["mixed_ticker_data"].create_index("time")
+                ticker_db["mixed_ticker_data"].create_index("symbol", unique=True)
+                ticker_db["mixed_ticker_data"].create_index("updated_at")
+                ticker_db["mixed_ticker_data"].create_index("source")
+                ticker_db["mixed_ticker_data"].create_index("prices.date")
             except Exception as e:
                 print(f"Note: Could not create indexes for ticker_db: {str(e)}")
             
@@ -268,67 +269,58 @@ class MongoDBManager:
         except Exception as e:
             print(f"Error creating indexes: {str(e)}")
 
-    def get_stock_from_ticker_db(self, symbol: str, limit: int = 100) -> list:
-        """
-        Get stock data from ticker_db.mixed_ticker_data
-        
-        Args:
-            symbol: Stock symbol (ticker)
-            limit: Maximum number of records to return
-            
-        Returns:
-            List of stock records
-        """
+    def get_stock_from_ticker_db(self, symbol: str, limit: int = 100):
+
         try:
+
             ticker_db = self.client["ticker_db"]
             collection = ticker_db["mixed_ticker_data"]
-            
-            results = list(collection
-                .find({"symbol": symbol.upper()})
-                .sort("time", -1)
-                .limit(limit))
-            
-            # Convert ObjectId to string for JSON serialization
-            for result in results:
-                if "_id" in result:
-                    result["_id"] = str(result["_id"])
-            
-            return results
+
+            doc = collection.find_one(
+                {"symbol": symbol.upper()},
+                {"prices": {"$slice": -limit}}
+            )
+
+            if not doc:
+                return []
+
+            prices = doc.get("prices", [])
+
+            if not prices:
+                return []
+
+            return prices
+
         except Exception as e:
             print(f"Error fetching stock data from ticker_db: {str(e)}")
-            return []
+            return []   
 
-    def get_stock_range_from_ticker_db(self, symbol: str, start_date: str, end_date: str) -> list:
-        """
-        Get stock data from ticker_db within date range
-        
-        Args:
-            symbol: Stock symbol
-            start_date: Start date (ISO format)
-            end_date: End date (ISO format)
-            
-        Returns:
-            List of stock records
-        """
+    def get_stock_range_from_ticker_db(self, symbol: str, start_date: str, end_date: str):
+
         try:
+
             ticker_db = self.client["ticker_db"]
             collection = ticker_db["mixed_ticker_data"]
-            
-            results = list(collection
-                .find({
-                    "symbol": symbol.upper(),
-                    "time": {"$gte": start_date, "$lte": end_date}
-                })
-                .sort("time", 1))
-            
-            # Convert ObjectId to string
-            for result in results:
-                if "_id" in result:
-                    result["_id"] = str(result["_id"])
-            
-            return results
+
+            doc = collection.find_one({"symbol": symbol.upper()})
+
+            if not doc:
+                return []
+
+            prices = doc.get("prices", [])
+
+            start = pd.to_datetime(start_date)
+            end = pd.to_datetime(end_date)
+
+            filtered = [
+                p for p in prices
+                if start <= pd.to_datetime(p.get("date")) <= end
+            ]
+
+            return filtered
+
         except Exception as e:
-            print(f"Error fetching stock data range from ticker_db: {str(e)}")
+            print(f"Error fetching stock data range: {e}")
             return []
 
     def get_available_tickers_from_ticker_db(self) -> list:
@@ -414,7 +406,10 @@ class MongoDBManager:
             ticker_db = self.client["ticker_db"]
             collection = ticker_db["mixed_ticker_data"]
 
-            doc = collection.find_one({"symbol": symbol.upper()})
+            doc = collection.find_one(
+                {"symbol": symbol.upper()},
+                {"symbol":1, "prices": {"$slice": -limit}}
+            )
 
             if not doc:
                 print(f"No document found for {symbol}")
@@ -447,9 +442,12 @@ class MongoDBManager:
             prices = prices[-limit:]
 
             df = pd.DataFrame(prices)
-
+            
             if df.empty:
                 return df
+            
+            if "symbol" not in df.columns:
+                df["symbol"] = symbol.upper()   
 
             df.columns = [c.lower() for c in df.columns]
 
@@ -485,8 +483,100 @@ class MongoDBManager:
         except Exception as e:
             print(f"Error getting latest prediction: {e}")
             return None
+        
+    def get_latest_price(self, symbol: str):
 
-# Global manager instance
+        try:
+
+            ticker_db = self.client["ticker_db"]
+            collection = ticker_db["mixed_ticker_data"]
+
+            doc = collection.find_one(
+                {"symbol": symbol.upper()},
+                {"prices": {"$slice": -1}}
+            )
+
+            if not doc:
+                return None
+
+            prices = doc.get("prices", [])
+
+            if not prices:
+                return None
+
+            return prices[-1]
+
+        except Exception as e:
+            print(f"Error fetching latest price: {e}")
+            return None
+        
+    def get_all_tickers_info(self):
+
+        try:
+
+            ticker_db = self.client["ticker_db"]
+            collection = ticker_db["mixed_ticker_data"]
+
+            docs = collection.find(
+                {},
+                {"symbol":1, "company_name":1, "_id":0}
+            )
+
+            return [
+                {
+                    "symbol": d.get("symbol"),
+                    "company_name": d.get("company_name")
+                }
+                for d in docs
+            ]
+
+        except Exception as e:
+            print(f"Error fetching ticker list: {e}")
+            return []
+
+    def get_market_snapshot(self):
+
+        try:
+
+            ticker_db = self.client["ticker_db"]
+            collection = ticker_db["mixed_ticker_data"]
+
+            docs = collection.find(
+                {},
+                {
+                    "symbol":1,
+                    "company_name":1,
+                    "prices": {"$slice": -1},
+                    "_id":0
+                }
+            )
+
+            results = []
+
+            for doc in docs:
+
+                prices = doc.get("prices", [])
+
+                if not prices:
+                    continue
+
+                p = prices[-1]
+
+                results.append({
+                    "symbol": doc.get("symbol"),
+                    "company_name": doc.get("company_name"),
+                    "close": p.get("close"),
+                    "volume": p.get("volume"),
+                    "return": p.get("return"),
+                    "date": p.get("date")
+                })
+
+            return results
+
+        except Exception as e:
+            print(f"Error building market snapshot: {e}")
+            return []
+    
 db_manager = None
 
 def get_db_manager() -> MongoDBManager:

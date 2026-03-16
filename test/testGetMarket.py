@@ -4,9 +4,9 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 
-def get_all_symbols():
+def get_all_symbols(source):
     listing = Listing()
-    df = listing.all_symbols()
+    df = listing.all_symbols(source=source)
     return df["symbol"].tolist()
 
 def fetch_valid_stock(symbol, start, end):
@@ -61,6 +61,7 @@ end_date = end_date.strftime("%Y-%m-%d")
 FPT = Vnstock().stock("FPT","KBS")
 print(FPT.quote.history(start=start_date,end=end_date,interval="1D"))
 """
+"""
 market_df = build_vn_market(start_date, end_date)
 
 market_df["time"] = pd.to_datetime(market_df["time"])
@@ -85,9 +86,24 @@ for symbol, g in grouped:
         "prices": prices
     })
 """
+"""
 if market_df is not None:
     market_df.to_csv("vn_full_market.csv", index=False)
+"""
 """
 print("Documents created:", len(docs))
 df = pd.DataFrame(docs)
 df.to_csv("seperated_vn_market_output.csv", sep=',', encoding='utf-8', index=False)
+"""
+
+def get_listing_data(source):
+
+    listing = Listing()
+
+    df = listing.all_symbols(source=source)
+
+    df.columns = [c.lower() for c in df.columns]
+
+    return df
+
+print(get_listing_data("KBS"))

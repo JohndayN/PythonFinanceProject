@@ -7,28 +7,99 @@ from datetime import datetime, timedelta
 import time
 import sys
 import config
+from pymongo import MongoClient
+
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
+# -----------------------------
+# MongoDB setup
+# -----------------------------
+
+client = MongoClient(config.mongo_uri)
+db = client[config.mongo_db]
+
+collection = db["mixed_ticker_data"]
+
+collection.create_index("symbol", unique=True)
+
+
+# -----------------------------
+# Utility functions
+# -----------------------------
+
 def normalize_columns(df):
     df.columns = [c.lower() for c in df.columns]
-
     return df
 
-def normalize_date(date_str):
-    try:
-        return datetime.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
-    except:
-        return date_str
 
-def get_all_symbols() -> List[str]:
+def normalize_date(date_str):
+
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+        except:
+            pass
+
+    return date_str
+
+
+# -----------------------------
+# Listing data
+# -----------------------------
+
+def get_listing_data(source="VCI"):
+
     try:
+
         listing = Listing()
-        df = listing.all_symbols()
-        return df["symbol"].tolist()
+
+        df = listing.all_symbols(source=source)
+
+        df = normalize_columns(df)
+
+        return df[["symbol", "organ_name"]]
+
     except Exception as e:
+
+        print(f"Error fetching listing data: {str(e)}")
+
+        return pd.DataFrame()
+
+
+def build_symbol_lookup(source="VCI"):
+
+    listing_df = get_listing_data(source)
+
+    lookup = {}
+
+    for _, row in listing_df.iterrows():
+
+        lookup[row["symbol"]] = row["organ_name"]
+
+    return lookup
+
+
+def get_all_symbols(source="VCI") -> List[str]:
+
+    try:
+
+        listing = Listing()
+
+        df = listing.all_symbols(source=source)
+
+        return df["symbol"].tolist()
+
+    except Exception as e:
+
         print(f"Error fetching all symbols: {str(e)}")
+
         return []
+
+
+# -----------------------------
+# Market data
+# -----------------------------
 
 def get_market_data(ticker, start_date=None, end_date=None, source=None):
 
@@ -48,7 +119,8 @@ def get_market_data(ticker, start_date=None, end_date=None, source=None):
     start_date = normalize_date(start_date)
     end_date = normalize_date(end_date)
 
-    # ---- Try VNSTOCK first ----
+    # ---- VNSTOCK ----
+
     try:
 
         print(f"Fetching {ticker} from VNStock ({source})")
@@ -62,29 +134,32 @@ def get_market_data(ticker, start_date=None, end_date=None, source=None):
         )
 
         if df is None or df.empty:
-            print(f"No data returned for {ticker} with VNStock {source}")
+            print(f"No data returned for {ticker}")
             return None
 
         df = normalize_columns(df)
 
         if "time" in df.columns:
             df["time"] = pd.to_datetime(df["time"])
-            df = df.set_index("time")
 
-        df = df.sort_index()
+        df = df.sort_values("time")
 
         df["symbol"] = ticker
 
         if "close" in df.columns:
+
             df["return"] = df["close"].pct_change()
+
             df["log_return"] = np.log(df["close"] / df["close"].shift(1))
 
         return df
 
     except Exception as e:
+
         print(f"VNStock failed {ticker} ({source}): {e}")
 
     # ---- Yahoo fallback ----
+
     try:
 
         yf_ticker = ticker + ".VN"
@@ -102,113 +177,153 @@ def get_market_data(ticker, start_date=None, end_date=None, source=None):
 
             df = normalize_columns(df)
 
-            result = pd.DataFrame()
-            result.index = df.index
+            df["time"] = df.index
 
-            result["close"] = df["close"]
-            result["volume"] = df["volume"]
-            result["symbol"] = ticker
+            df["symbol"] = ticker
 
-            result["return"] = result["close"].pct_change()
-            result["log_return"] = np.log(result["close"] / result["close"].shift(1))
+            df["return"] = df["close"].pct_change()
 
-            result = result.dropna(subset=["return"])
+            df["log_return"] = np.log(df["close"] / df["close"].shift(1))
 
-            return result
+            df = df.reset_index(drop=True)
 
-        print(f"No data returned for {ticker} with YahooFinance")
+            return df
 
     except Exception as e:
+
         print(f"Yahoo failed {ticker}: {e}")
 
     return None
 
-def get_bulk_market_data(tickers: List[str], 
-                        start_date: Optional[str] = None, 
-                        end_date: Optional[str] = None) -> Dict[str, pd.DataFrame]:
-    results = {}
-    for ticker in tickers:
-        print(f"Fetching {ticker}...")
-        df = get_market_data(ticker, start_date, end_date)
-        if df is not None:
-            results[ticker] = df
-    return results
 
-def build_vn_market(start_date: Optional[str] = None, 
-                    end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+# -----------------------------
+# Mongo helpers
+# -----------------------------
+
+def build_price_list(df):
+
+    prices = df.apply(
+        lambda r: {
+            "date": r["time"],
+            "open": r.get("open"),
+            "high": r.get("high"),
+            "low": r.get("low"),
+            "close": r.get("close"),
+            "volume": r.get("volume"),
+            "return": r.get("return"),
+            "log_return": r.get("log_return")
+        },
+        axis=1
+    ).tolist()
+
+    return prices
+
+
+def save_to_mongo(symbol, company_name, prices, source):
+
+    doc = {
+        "symbol": symbol,
+        "company_name": company_name,
+        "source": source,
+        "updated_at": datetime.utcnow(),
+        "prices": prices
+    }
+
+    collection.update_one(
+        {"symbol": symbol},
+        {"$set": doc},
+        upsert=True
+    )
+
+
+# -----------------------------
+# Build full VN market
+# -----------------------------
+
+def build_vn_market(start_date=None,
+                    end_date=None,
+                    source="VCI"):
+
     if start_date is None:
         start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
-    
-    symbols = get_all_symbols()
-    all_data = []
-    
+
+    symbols = get_all_symbols(source)
+
+    symbol_lookup = build_symbol_lookup(source)
+
     print(f"Building Vietnamese market data for {len(symbols)} stocks...")
-    
+
     for i, symbol in enumerate(symbols):
+
         print(f"[{i+1}/{len(symbols)}] Processing {symbol}")
-        
-        df = get_market_data(symbol, start_date, end_date)
-        
-        if df is not None:
-            all_data.append(df)
-        
-        # Rate limiting to avoid API overload
+
+        df = get_market_data(symbol, start_date, end_date, source)
+
+        if df is None:
+            continue
+
+        prices = build_price_list(df)
+
+        company_name = symbol_lookup.get(symbol)
+
+        save_to_mongo(symbol, company_name, prices, source)
+
         time.sleep(3)
-    
-    if all_data:
-        result = pd.concat(all_data, ignore_index=True)
-        return result
-    return None
+
+
+# -----------------------------
+# Correlation matrix
+# -----------------------------
 
 def get_market_correlation_matrix(tickers: List[str],
                                     start_date: Optional[str] = None,
-                                    end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
-    market_data = get_bulk_market_data(tickers, start_date, end_date)
-    
-    if not market_data or len(market_data) < 2:
-        print("Insufficient valid tickers for correlation matrix")
+                                    end_date: Optional[str] = None):
+
+    results = {}
+
+    for ticker in tickers:
+
+        df = get_market_data(ticker, start_date, end_date)
+
+        if df is not None:
+
+            results[ticker] = df["return"]
+
+    if len(results) < 2:
+
+        print("Insufficient tickers")
+
         return None
-    
-    # Extract returns for each ticker
-    returns_dict = {}
-    for ticker, df in market_data.items():
-        if 'return' in df.columns:
-            returns_dict[ticker] = df['return']
-    
-    if not returns_dict:
-        return None
-    
-    # Create DataFrame with all returns
-    returns_df = pd.DataFrame(returns_dict)
-    
-    # Calculate correlation
-    correlation = returns_df.corr()
-    
-    return correlation
 
-#Not used yet, but could be useful for future analysis
-def build_returns_matrix(data):
+    returns_df = pd.DataFrame(results)
 
-    pivot = data.pivot_table(
-        index=data.index,
-        columns="symbol",
-        values="return"
-    )
+    return returns_df.corr()
 
-    return pivot
 
-# Legacy function name for compatibility
-def fetch_market_data(*args, **kwargs):
-    """Alias for get_market_data"""
-    return get_market_data(*args, **kwargs)
+# -----------------------------
+# Main test
+# -----------------------------
 
 if __name__ == "__main__":
-    # Test
+
     df = get_market_data("VCB", "2023-01-01", "2024-12-31")
+
     if df is not None:
-        print(f"Successfully fetched data shape: {df.shape}")
-        print(df.head())
+
+        prices = build_price_list(df)
+
+        save_to_mongo(
+            "VCB",
+            "Ngân hàng TMCP Ngoại thương Việt Nam",
+            prices,
+            "VCI"
+        )
+
+        print("Saved test ticker")
+
     else:
+
         print("Failed to fetch data")
